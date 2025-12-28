@@ -1,7 +1,7 @@
-=== 🇷🇺 RUSSIA WHITELISTS ===
-https://raw.githubusercontent.com/kort0881/vpn-checker-backend/main/checked/RU_Best/ru_white_part1.txt | RU Best (Part 1)
-https://raw.githubusercontent.com/kort0881/vpn-checker-backend/main/checked/RU_Best/ru_white_part2.txt | RU Best (Part 2)
-https://raw.githubusercontent.com/kort0881/vpn-checker-backend/main/checked/RU_Best/ru_white_part3.txt | RU Best (Part 3)
+=== 🇷🇺 RUSSIA (BASE64) ===
+https://raw.githubusercontent.com/kort0881/vpn-checker-backend/main/checked/RU_Best/ru_white_part1.txt | Russia Best
+https://raw.githubusercontent.com/kort0881/vpn-checker-backend/main/checked/RU_Best/ru_white_part2.txt | Russia Best
+https://raw.githubusercontent.com/kort0881/vpn-checker-backend/main/checked/RU_Best/ru_white_part3.txt | Russia Best
 
-=== 🇪🇺 MY EUROPE ===
-https://raw.githubusercontent.com/kort0881/vpn-checker-backend/main/checked/My_Euro/my_euro.txt | Euro
+=== 🇪🇺 EUROPE (BASE64) ===
+https://raw.githubusercontent.com/kort0881/vpn-checker-backend/main/checked/My_Euro/my_euro.txt | Europe Best
