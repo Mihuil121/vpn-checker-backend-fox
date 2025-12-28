@@ -1,0 +1,41 @@
+name: Auto Key Checker
+
+on:
+  schedule:
+    - cron: '0 */4 * * *'  # Запуск каждые 4 часа
+  workflow_dispatch:       # Кнопка ручного запуска
+
+permissions:
+  contents: write          # Разрешение на запись результата обратно в репозиторий
+
+jobs:
+  check-keys:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install libraries
+        run: pip install -r requirements.txt
+
+      - name: Download fresh keys (Aggregation)
+        run: |
+          mkdir -p keys
+          # ПРИМЕР: Качаем ключи с публичных источников (можно добавить свои ссылки)
+          curl -s -L "https://raw.githubusercontent.com/yebekhe/TelegramV2rayCollector/main/sub/normal/vless" > keys/source1.txt
+          curl -s -L "https://raw.githubusercontent.com/mahdibland/V2RayAggregator/master/Eternity" > keys/source2.txt
+          # Можно добавить сколько угодно источников
+
+      - name: Run Python Checker
+        run: python main.py
+
+      - name: Commit and Push results
+        uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          commit_message: "Update Keys: ${{ github.event.head_commit.message }}"
+          file_pattern: "checked/*"
