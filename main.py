@@ -33,7 +33,7 @@ socket.setdefaulttimeout(TIMEOUT)
 THREADS = 40 
 CACHE_HOURS = 12
 CHUNK_LIMIT = 1000
-MAX_KEYS_TO_CHECK = 4000 # Ограничитель! Не проверяем больше этого числа, чтобы не виснуть.
+MAX_KEYS_TO_CHECK = 4000 
 
 HISTORY_FILE = os.path.join(BASE_DIR, "history.json")
 MY_CHANNEL = "@vlesstrojan" 
@@ -53,7 +53,7 @@ URLS_MY = [
 ]
 
 EURO_CODES = {"NL", "DE", "FI", "GB", "FR", "SE", "PL", "CZ", "AT", "CH", "IT", "ES", "NO", "DK", "BE", "IE", "LU", "EE", "LV", "LT"}
-BAD_MARKERS = ["CN", "IR", "KR", "BR", "IN", "RELAY", "POOL", "🇨🇳", "🇮🇷", "🇰🇷"] # Если это в названии - скипаем
+BAD_MARKERS = ["CN", "IR", "KR", "BR", "IN", "RELAY", "POOL", "🇨🇳", "🇮🇷", "🇰🇷"] 
 
 def load_json(path):
     if os.path.exists(path):
@@ -81,13 +81,10 @@ def get_country_fast(host, key_name):
     except: pass
     return "UNKNOWN"
 
-# Фильтр мусора по названию (без сети)
 def is_garbage_text(key_str):
     upper = key_str.upper()
-    # Проверка маркеров (IR, CN...)
     for m in BAD_MARKERS:
         if m in upper: return True
-    # Проверка доменов
     if ".ir" in key_str or ".cn" in key_str or "127.0.0.1" in key_str: return True
     return False
 
@@ -108,11 +105,8 @@ def fetch_keys(urls, tag):
                 l = l.strip()
                 if len(l) > 2000: continue 
                 if l.startswith(("vless://", "vmess://", "trojan://", "ss://")):
-                    
-                    # ДЛЯ ВАШИХ ССЫЛОК (MY) - ЖЕСТКИЙ ПРЕД-ФИЛЬТР
                     if tag == "MY":
                         if is_garbage_text(l): continue
-                        
                     out.append((l, tag))
         except: pass
     return out
@@ -126,8 +120,6 @@ def check_single_key(data):
         else: return None, None, None
 
         country = get_country_fast(host, key)
-        
-        # Второй фильтр (если страна не Европа для MY)
         if tag == "MY" and country != "UNKNOWN" and country not in EURO_CODES:
             return None, None, None
 
@@ -165,8 +157,16 @@ def extract_ping(key_str):
         return int(ping_part)
     except: return None
 
+# ВОТ ОНА, РОДНАЯ!
+def save_chunked(keys_list, folder, base_name):
+    if not keys_list: return
+    chunks = [keys_list[i:i + CHUNK_LIMIT] for i in range(0, len(keys_list), CHUNK_LIMIT)]
+    for i, chunk in enumerate(chunks, 1):
+        fname = f"{base_name}.txt" if len(chunks) == 1 else f"{base_name}_part{i}.txt"
+        with open(os.path.join(folder, fname), "w", encoding="utf-8") as f: f.write("\n".join(chunk))
+
 if __name__ == "__main__":
-    print(f"=== CHECKER v8 (Auto-Clean & Limit) ===")
+    print(f"=== CHECKER v8.1 (Fixed Save) ===")
     
     history = load_json(HISTORY_FILE)
     tasks = fetch_keys(URLS_RU, "RU") + fetch_keys(URLS_MY, "MY")
@@ -175,8 +175,6 @@ if __name__ == "__main__":
     total_raw = len(unique_tasks)
     print(f"Загружено всего: {total_raw}")
     
-    # ОГРАНИЧИТЕЛЬ: Если ключей > 4000, берем только первые 4000
-    # Это гарантия того, что скрипт не будет висеть часами.
     all_items = list(unique_tasks)
     if len(all_items) > MAX_KEYS_TO_CHECK:
         print(f"⚠️ Слишком много ключей! Берем первые {MAX_KEYS_TO_CHECK} для скорости.")
@@ -202,7 +200,7 @@ if __name__ == "__main__":
         else:
             to_check.append((k, tag))
 
-    print(f"На проверку (после кэша и лимита): {len(to_check)}")
+    print(f"На проверку: {len(to_check)}")
 
     if to_check:
         with ThreadPoolExecutor(max_workers=THREADS) as executor:
@@ -234,6 +232,9 @@ if __name__ == "__main__":
     res_ru.sort(key=extract_ping)
     res_euro.sort(key=extract_ping)
     
+    print(f"RU Result: {len(res_ru)}")
+    print(f"Euro Result: {len(res_euro)}")
+
     save_chunked(res_ru, FOLDER_RU, "ru_white")
     save_chunked(res_euro, FOLDER_EURO, "my_euro")
 
@@ -251,6 +252,7 @@ if __name__ == "__main__":
         f.write("\n".join(subs))
 
     print("=== DONE SUCCESS ===")
+
 
 
 
