@@ -1,10 +1,22 @@
-=== 🇷🇺 RUSSIA (BASE64) ===
-https://raw.githubusercontent.com/kort0881/vpn-checker-backend/main/checked/RU_Best/ru_white_part1.txt | Russia Best
-https://raw.githubusercontent.com/kort0881/vpn-checker-backend/main/checked/RU_Best/ru_white_part2.txt | Russia Best
-https://raw.githubusercontent.com/kort0881/vpn-checker-backend/main/checked/RU_Best/ru_white_part3.txt | Russia Best
-https://raw.githubusercontent.com/kort0881/vpn-checker-backend/main/checked/RU_Best/ru_white_part4.txt | Russia Best
+=== 🇷🇺 РОССИЯ ===
 
-=== 🇪🇺 EUROPE (BASE64) ===
-https://raw.githubusercontent.com/kort0881/vpn-checker-backend/main/checked/My_Euro/my_euro_part1.txt | Europe Best
-https://raw.githubusercontent.com/kort0881/vpn-checker-backend/main/checked/My_Euro/my_euro_part2.txt | Europe Best
-https://raw.githubusercontent.com/kort0881/vpn-checker-backend/main/checked/My_Euro/my_euro_part3.txt | Europe Best
+⚪ БЕЛЫЙ СПИСОК (Госуслуги, банки, РФ сайты):
+https://raw.githubusercontent.com/kort0881/vpn-checker-backend/main/checked/RU_Best/ru_white.txt
+
+⚫ ЧЕРНЫЙ СПИСОК (Полный VPN):
+https://raw.githubusercontent.com/kort0881/vpn-checker-backend/main/checked/RU_Best/ru_black.txt
+
+🔘 УНИВЕРСАЛЬНЫЕ:
+https://raw.githubusercontent.com/kort0881/vpn-checker-backend/main/checked/RU_Best/ru_universal.txt
+
+=== 🇪🇺 ЕВРОПА ===
+
+⚪ БЕЛЫЙ СПИСОК:
+https://raw.githubusercontent.com/kort0881/vpn-checker-backend/main/checked/My_Euro/euro_white.txt
+
+⚫ ЧЕРНЫЙ СПИСОК:
+https://raw.githubusercontent.com/kort0881/vpn-checker-backend/main/checked/My_Euro/euro_black.txt
+
+🔘 УНИВЕРСАЛЬНЫЕ:
+https://raw.githubusercontent.com/kort0881/vpn-checker-backend/main/checked/My_Euro/euro_universal_part1.txt
+https://raw.githubusercontent.com/kort0881/vpn-checker-backend/main/checked/My_Euro/euro_universal_part2.txt

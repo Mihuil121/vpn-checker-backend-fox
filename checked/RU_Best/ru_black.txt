@@ -1,0 +1,1 @@
+vless://e329843c-02c3-4401-8289-cf196d5a6921@95.163.249.95:8443?encryption=none&flow=xtls-rprx-vision&fp=chrome&pbk=Qddpg8luihgzgx4g4uMJklXzlrMCd8L1igJSWrRUvSc&security=reality&sid=887c0d72e771a934&sni=m.vk.com&type=tcp#790ms_HR_BLACK_@vlesstrojan
