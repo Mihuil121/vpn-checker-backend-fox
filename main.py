@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-VPN Checker v15.1 - Consolidated Edition with TUI
-Гибрид v13.0 и v14.0 с оптимальными улучшениями + TUI интерфейс
+VPN Checker v15.1 - Consolidated Edition with TUI & Token Support
+Гибрид v13.0 и v14.0 с оптимальными улучшениями + TUI интерфейс + Поддержка токенов
 """
 
 import os
@@ -21,7 +21,7 @@ import curses
 import signal
 from dataclasses import dataclass, asdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import datetime, timedelta
 from collections import defaultdict
 from typing import Optional, Dict, List, Tuple
 
@@ -54,6 +54,8 @@ class Config:
     HISTORY_FILE: str = "checked/history.json"
     ANALYTICS_FILE: str = "checked/analytics.json"
     BLACKLIST_FILE: str = "checked/blacklist.json"
+    TOKENS_FILE: str = "checked/tokens.json"  # Файл с токенами пользователей
+    ACCESS_LOG_FILE: str = "checked/access_log.json"  # Лог использования
     
     MY_CHANNEL: str = "@vlesstrojan"
 
@@ -61,26 +63,26 @@ CFG = Config()
 
 # Источники (вынесены отдельно для удобства)
 URLS_RU = [
-    "https://raw.githubusercontent.com/zieng2/wl/main/vless.txt ",
-    "https://raw.githubusercontent.com/LowiKLive/BypassWhitelistRu/refs/heads/main/WhiteList-Bypass_Ru.txt ",
-    "https://raw.githubusercontent.com/zieng2/wl/main/vless_universal.txt ",
-    "https://raw.githubusercontent.com/vsevjik/OBSpiskov/refs/heads/main/wwh ",
-    "https://etoneya.a9fm.site/1 ",
-    "https://raw.githubusercontent.com/Kirillo4ka/vpn-configs-for-russia/refs/heads/main/Vless-Rus-Mobile-White-List.txt ",
-    "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Mobile.txt ",
-    "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Cable.txt ",
-    "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_SS%2BAll_RUS.txt ",
-    "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS.txt ",
-    "https://raw.githubusercontent.com/Mosifree/-FREE2CONFIG/refs/heads/main/Reality",
-    "https://raw.githubusercontent.com/STR97/STRUGOV/refs/heads/main/STR.BYPASS",
+    "https://raw.githubusercontent.com/zieng2/wl/main/vless.txt  ",
+    "https://raw.githubusercontent.com/LowiKLive/BypassWhitelistRu/refs/heads/main/WhiteList-Bypass_Ru.txt  ",
+    "https://raw.githubusercontent.com/zieng2/wl/main/vless_universal.txt  ",
+    "https://raw.githubusercontent.com/vsevjik/OBSpiskov/refs/heads/main/wwh  ",
+    "https://etoneya.a9fm.site/1  ",
+    "https://raw.githubusercontent.com/Kirillo4ka/vpn-configs-for-russia/refs/heads/main/Vless-Rus-Mobile-White-List.txt  ",
+    "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Mobile.txt  ",
+    "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Cable.txt  ",
+    "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_SS%2BAll_RUS.txt  ",
+    "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS.txt  ",
+    "https://raw.githubusercontent.com/Mosifree/-FREE2CONFIG/refs/heads/main/Reality ",
+    "https://raw.githubusercontent.com/STR97/STRUGOV/refs/heads/main/STR.BYPASS ",
 ]
 
 URLS_MY = [
-    "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/refs/heads/main/githubmirror/new/all_new.txt ",
-    "https://raw.githubusercontent.com/crackbest/V2ray-Config/refs/heads/main/config.txt ",
-    "https://raw.githubusercontent.com/miladtahanian/multi-proxy-config-fetcher/refs/heads/main/configs/proxy_configs.txt ",
-    "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/refs/heads/main/Countries/Latvia.txt ",
-    "https://raw.githubusercontent.com/STR97/STRUGOV/refs/heads/main/BYPASS",
+    "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/refs/heads/main/githubmirror/new/all_new.txt  ",
+    "https://raw.githubusercontent.com/crackbest/V2ray-Config/refs/heads/main/config.txt  ",
+    "https://raw.githubusercontent.com/miladtahanian/multi-proxy-config-fetcher/refs/heads/main/configs/proxy_configs.txt  ",
+    "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/refs/heads/main/Countries/Latvia.txt  ",
+    "https://raw.githubusercontent.com/STR97/STRUGOV/refs/heads/main/BYPASS ",
 ]
 
 # Коды стран и маркеры
@@ -115,7 +117,6 @@ def extract_ping(key_str: str) -> Optional[int]:
         label = key_str.split("#")[-1]
         if "ms" not in label:
             return None
-        # Формат: 123ms_RU_W_... или 123ms_...
         ping_part = label.split("ms")[0].split("_")[-1]
         return int(ping_part)
     except:
@@ -174,6 +175,88 @@ class KeyInfo:
         if q >= 60: return "✅"
         if q >= 40: return "⚡"
         return "⚠️"
+
+# ==================== ТОКЕН МЕНЕДЖЕР ====================
+class TokenManager:
+    """Управление токенами пользователей"""
+    
+    def __init__(self, tokens_file: str):
+        self.tokens_file = tokens_file
+        self.tokens = load_json(tokens_file)
+    
+    def generate_token(self, username: str, tier: str = "free", limit: int = 1000, days: int = 30) -> str:
+        """Генерировать новый токен для пользователя"""
+        import secrets
+        token = secrets.token_urlsafe(32)
+        
+        self.tokens[token] = {
+            "username": username,
+            "tier": tier,
+            "limit": limit,
+            "used": 0,
+            "created": time.time(),
+            "expires": time.time() + (days * 86400),
+            "devices": {}  # device_fingerprint: {last_seen, user_agent}
+        }
+        
+        self.save()
+        return token
+    
+    def validate_token(self, token: str) -> bool:
+        """Проверить валидность токена"""
+        if token not in self.tokens:
+            return False
+        
+        user = self.tokens[token]
+        now = time.time()
+        
+        # Проверяем срок действия
+        if now > user["expires"]:
+            return False
+        
+        # Проверяем лимит использования
+        if user["used"] >= user["limit"]:
+            return False
+        
+        return True
+    
+    def record_usage(self, token: str, device_fingerprint: str, user_agent: str = None):
+        """Записать использование токена"""
+        if token not in self.tokens:
+            return False
+        
+        user = self.tokens[token]
+        
+        # Увеличиваем счетчик
+        user["used"] += 1
+        
+        # Обновляем информацию об устройстве
+        user["devices"][device_fingerprint] = {
+            "last_seen": time.time(),
+            "user_agent": user_agent,
+            "first_seen": user["devices"].get(device_fingerprint, {}).get("first_seen", time.time())
+        }
+        
+        self.save()
+        return True
+    
+    def get_token_info(self, token: str) -> Optional[Dict]:
+        """Получить информацию о токене"""
+        return self.tokens.get(token)
+    
+    def list_tokens(self) -> Dict:
+        """Получить все токены"""
+        return self.tokens
+    
+    def revoke_token(self, token: str):
+        """Отозвать токен"""
+        if token in self.tokens:
+            self.tokens[token]["expires"] = 0
+            self.save()
+    
+    def save(self):
+        """Сохранить токены в файл"""
+        save_json(self.tokens_file, self.tokens)
 
 # ==================== КЛАССИФИКАТОР ====================
 class SmartClassifier:
@@ -487,6 +570,7 @@ class TUI:
             "⚙️  Настройки",
             "🗑️  Очистить кэш",
             "📊 Статистика",
+            "🔑 Управление токенами",  # Новый пункт меню
             "❌ Выход"
         ]
         self.settings = {
@@ -641,6 +725,11 @@ class TUI:
             total_checks = sum(len(v.get('checks', [])) for v in analytics.values())
             self.stdscr.addstr(y + 5, 4, f"🔍 Всего проверок: {total_checks}")
             
+            # Токены
+            tokens = load_json(CFG.TOKENS_FILE)
+            active_tokens = sum(1 for t in tokens.values() if time.time() < t.get('expires', 0))
+            self.stdscr.addstr(y + 6, 4, f"🔑 Токенов: {len(tokens)} (активных: {active_tokens})")
+            
         except Exception as e:
             self.stdscr.addstr(y, 4, f"❌ Ошибка загрузки статистики: {e}")
         
@@ -669,6 +758,158 @@ class TUI:
         except Exception as e:
             self.stdscr.addstr(4, 4, f"❌ Ошибка: {e}")
         
+        self.stdscr.addstr(6, 2, "Нажмите любую клавишу...")
+        self.stdscr.refresh()
+        self.stdscr.getch()
+    
+    def manage_tokens(self):
+        """Управление токенами"""
+        self.stdscr.clear()
+        token_manager = TokenManager(CFG.TOKENS_FILE)
+        
+        while True:
+            self.stdscr.clear()
+            
+            title = " 🔑 УПРАВЛЕНИЕ ТОКЕНАМИ "
+            self.stdscr.attron(curses.A_BOLD | curses.A_REVERSE)
+            self.stdscr.addstr(0, (self.width - len(title)) // 2, title)
+            self.stdscr.attroff(curses.A_BOLD | curses.A_REVERSE)
+            
+            tokens = token_manager.list_tokens()
+            
+            # Список токенов
+            y = 3
+            self.stdscr.addstr(y, 4, "Список токенов:", curses.A_BOLD)
+            y += 2
+            
+            if not tokens:
+                self.stdscr.addstr(y, 4, "Нет активных токенов", curses.A_DIM)
+                y += 2
+            else:
+                for idx, (token, data) in enumerate(list(tokens.items())[:10]):  # Показываем первые 10
+                    status = "✅" if time.time() < data.get('expires', 0) else "❌"
+                    expires = datetime.fromtimestamp(data.get('expires', 0)).strftime('%Y-%m-%d')
+                    line = f"{status} {data.get('username', 'unknown')[:20]:<20} | Использовано: {data.get('used', 0)}/{data.get('limit', 0)} | До: {expires}"
+                    self.stdscr.addstr(y + idx, 4, line[:self.width-6])
+            
+            # Меню действий
+            y += len(tokens) + 3 if tokens else 3
+            actions = [
+                "1. Создать новый токен",
+                "2. Отозвать токен",
+                "3. Показать полный список",
+                "4. Вернуться в главное меню"
+            ]
+            
+            for idx, action in enumerate(actions):
+                self.stdscr.addstr(y + idx, 4, action)
+            
+            hint = "Выберите действие (1-4) или нажмите q для выхода"
+            self.stdscr.addstr(self.height - 2, (self.width - len(hint)) // 2, hint, curses.A_DIM)
+            
+            self.stdscr.refresh()
+            
+            key = self.stdscr.getch()
+            
+            if key == ord('1'):
+                self.create_token_dialog(token_manager)
+            elif key == ord('2'):
+                self.revoke_token_dialog(token_manager)
+            elif key == ord('3'):
+                self.show_all_tokens(token_manager)
+            elif key == ord('4') or key == ord('q'):
+                break
+    
+    def create_token_dialog(self, token_manager: TokenManager):
+        """Диалог создания токена"""
+        self.stdscr.clear()
+        self.stdscr.addstr(2, 2, "🆕 СОЗДАНИЕ НОВОГО ТОКЕНА")
+        
+        # Имя пользователя
+        self.stdscr.addstr(4, 4, "Имя пользователя: ")
+        curses.echo()
+        curses.curs_set(1)
+        username = self.stdscr.getstr(4, 22, 30).decode('utf-8')
+        curses.noecho()
+        curses.curs_set(0)
+        
+        # Тариф
+        self.stdscr.addstr(6, 4, "Тариф (free/basic/pro): ")
+        curses.echo()
+        curses.curs_set(1)
+        tier = self.stdscr.getstr(6, 30, 10).decode('utf-8') or "free"
+        curses.noecho()
+        curses.curs_set(0)
+        
+        # Лимит
+        limits = {"free": 1000, "basic": 10000, "pro": 100000}
+        limit = limits.get(tier, 1000)
+        
+        # Срок действия
+        self.stdscr.addstr(8, 4, "Срок действия (дней): ")
+        curses.echo()
+        curses.curs_set(1)
+        try:
+            days = int(self.stdscr.getstr(8, 27, 5).decode('utf-8') or "30")
+        except:
+            days = 30
+        curses.noecho()
+        curses.curs_set(0)
+        
+        # Генерация токена
+        token = token_manager.generate_token(username, tier, limit, days)
+        
+        self.stdscr.addstr(10, 4, f"✅ Токен создан!", curses.A_BOLD)
+        self.stdscr.addstr(12, 4, f"Токен: {token}", curses.A_REVERSE)
+        self.stdscr.addstr(14, 4, f"Сохраните его! Он показан только сейчас.")
+        self.stdscr.addstr(16, 4, "Нажмите любую клавишу...")
+        
+        self.stdscr.refresh()
+        self.stdscr.getch()
+    
+    def revoke_token_dialog(self, token_manager: TokenManager):
+        """Диалог отзыва токена"""
+        self.stdscr.clear()
+        self.stdscr.addstr(2, 2, "🚫 ОТЗЫВ ТОКЕНА")
+        self.stdscr.addstr(4, 4, "Введите токен для отзыва: ")
+        
+        curses.echo()
+        curses.curs_set(1)
+        token = self.stdscr.getstr(4, 32, 50).decode('utf-8')
+        curses.noecho()
+        curses.curs_set(0)
+        
+        if token_manager.get_token_info(token):
+            token_manager.revoke_token(token)
+            self.stdscr.addstr(6, 4, "✅ Токен отозван", curses.A_BOLD)
+        else:
+            self.stdscr.addstr(6, 4, "❌ Токен не найден", curses.A_BOLD)
+        
+        self.stdscr.addstr(8, 4, "Нажмите любую клавишу...")
+        self.stdscr.refresh()
+        self.stdscr.getch()
+    
+    def show_all_tokens(self, token_manager: TokenManager):
+        """Показать все токены"""
+        self.stdscr.clear()
+        tokens = token_manager.list_tokens()
+        
+        # Сохраняем в текстовый файл для удобства
+        report_file = os.path.join(CFG.BASE_DIR, "tokens_report.txt")
+        with open(report_file, "w", encoding="utf-8") as f:
+            f.write("=== ОТЧЕТ ПО ТОКЕНАМ ===\n\n")
+            for token, data in tokens.items():
+                f.write(f"Токен: {token}\n")
+                f.write(f"  Пользователь: {data.get('username', 'unknown')}\n")
+                f.write(f"  Тариф: {data.get('tier', 'free')}\n")
+                f.write(f"  Лимит: {data.get('used', 0)}/{data.get('limit', 0)}\n")
+                f.write(f"  Создан: {datetime.fromtimestamp(data.get('created', 0)).strftime('%Y-%m-%d %H:%M')}\n")
+                f.write(f"  Истекает: {datetime.fromtimestamp(data.get('expires', 0)).strftime('%Y-%m-%d %H:%M')}\n")
+                f.write(f"  Устройств: {len(data.get('devices', {}))}\n")
+                f.write("\n")
+        
+        self.stdscr.addstr(2, 2, f"📋 Полный список токенов сохранен в:")
+        self.stdscr.addstr(4, 4, report_file)
         self.stdscr.addstr(6, 2, "Нажмите любую клавишу...")
         self.stdscr.refresh()
         self.stdscr.getch()
@@ -794,8 +1035,8 @@ class TUI:
             
             # Подписки
             GITHUB_REPO = "Mihuil121/vpn-checker-backend-fox"
-            BASE_RU = f"https://raw.githubusercontent.com/ {GITHUB_REPO}/main/{CFG.BASE_DIR}/RU_Best"
-            BASE_EU = f"https://raw.githubusercontent.com/ {GITHUB_REPO}/main/{CFG.BASE_DIR}/My_Euro"
+            BASE_RU = f"https://raw.githubusercontent.com/  {GITHUB_REPO}/main/{CFG.BASE_DIR}/RU_Best"
+            BASE_EU = f"https://raw.githubusercontent.com/  {GITHUB_REPO}/main/{CFG.BASE_DIR}/My_Euro"
             
             subs = ["=== 🇷🇺 РОССИЯ ===", ""]
             for name, files in [("⚪ БЕЛЫЙ СПИСОК", results['ru_white']), 
@@ -803,7 +1044,6 @@ class TUI:
                                ("🔘 УНИВЕРСАЛЬНЫЕ", results['ru_universal'])]:
                 if files:
                     subs.append(f"{name}:")
-                    # Генерация файлов уже сделана, добавляем ссылки
                     base_name = "ru_" + name.split()[1].lower()
                     subs.extend(f"{BASE_RU}/{base_name}.txt")
                     subs.append("")
@@ -834,19 +1074,17 @@ class TUI:
     
     def run(self):
         """Главный цикл TUI"""
-        # ИСПРАВЛЕНИЕ: Правильная инициализация цветов
         curses.curs_set(0)  # Скрыть курсор
         
         # Инициализация цветов
         if curses.has_colors():
-            curses.start_color()  # <-- СНАЧАЛА это
-            curses.use_default_colors()  # <-- ПОТОМ это
+            curses.start_color()
+            curses.use_default_colors()
             curses.init_pair(1, curses.COLOR_CYAN, -1)
             curses.init_pair(2, curses.COLOR_GREEN, -1)
             curses.init_pair(3, curses.COLOR_YELLOW, -1)
             curses.init_pair(4, curses.COLOR_RED, -1)
         else:
-            # Если цвета не поддерживаются
             try:
                 curses.use_default_colors()
             except:
@@ -886,7 +1124,9 @@ class TUI:
                     self.clear_cache()
                 elif self.current_row == 4:  # Статистика
                     self.show_statistics()
-                elif self.current_row == 5:  # Выход
+                elif self.current_row == 5:  # Управление токенами
+                    self.manage_tokens()
+                elif self.current_row == 6:  # Выход
                     break
             elif key == ord('q'):
                 break
@@ -1164,8 +1404,8 @@ def main_logic(args):
     
     # Подписки
     GITHUB_REPO = "Mihuil121/vpn-checker-backend-fox"
-    BASE_RU = f"https://raw.githubusercontent.com/ {GITHUB_REPO}/main/{CFG.BASE_DIR}/RU_Best"
-    BASE_EU = f"https://raw.githubusercontent.com/ {GITHUB_REPO}/main/{CFG.BASE_DIR}/My_Euro"
+    BASE_RU = f"https://raw.githubusercontent.com/  {GITHUB_REPO}/main/{CFG.BASE_DIR}/RU_Best"
+    BASE_EU = f"https://raw.githubusercontent.com/  {GITHUB_REPO}/main/{CFG.BASE_DIR}/My_Euro"
     
     subs = ["=== 🇷🇺 РОССИЯ ===", ""]
     
@@ -1204,6 +1444,10 @@ def main_logic(args):
     print("  🔘 Универсальный - неопределён, проверьте вручную")
     print(f"\n📋 Подписки сохранены в: {CFG.BASE_DIR}/subscriptions_list.txt")
 
+def generate_user_link(token: str, filename: str = "ru_white.txt") -> str:
+    """Сгенерировать ссылку с токеном для пользователя"""
+    return f"https://raw.githubusercontent.com/YOUR_USER/YOUR_REPO/main/{CFG.BASE_DIR}/{filename}?token={token}"
+
 # ==================== ЗАПУСК ====================
 if __name__ == "__main__":
     # Проверяем, есть ли аргументы командной строки
@@ -1212,25 +1456,54 @@ if __name__ == "__main__":
     parser.add_argument("--threads", type=int, default=50, help="Количество потоков")
     parser.add_argument("--max-keys", type=int, default=15000, help="Максимум ключей")
     parser.add_argument("--cli", action="store_true", help="Запустить в CLI режиме (без TUI)")
+    parser.add_argument("--gen-token", type=str, help="Сгенерировать токен для пользователя (имя)")
+    parser.add_argument("--revoke-token", type=str, help="Отозвать токен")
+    parser.add_argument("--list-tokens", action="store_true", help="Показать все токены")
     args = parser.parse_args()
     
-    if args.cli or len(os.sys.argv) > 1:
+    # Обработка команд токенов
+    if args.gen_token:
+        token_manager = TokenManager(CFG.TOKENS_FILE)
+        token = token_manager.generate_token(args.gen_token, tier="pro", limit=50000, days=30)
+        print(f"✅ Токен для {args.gen_token}:")
+        print(token)
+        print(f"Ссылка: https://YOUR_LINK?token={token}")
+        exit(0)
+    
+    if args.revoke_token:
+        token_manager = TokenManager(CFG.TOKENS_FILE)
+        token_manager.revoke_token(args.revoke_token)
+        print("✅ Токен отозван")
+        exit(0)
+    
+    if args.list_tokens:
+        token_manager = TokenManager(CFG.TOKENS_FILE)
+        tokens = token_manager.list_tokens()
+        print("=== СПИСОК ТОКЕНОВ ===")
+        for token, data in tokens.items():
+            print(f"Токен: {token}")
+            print(f"  Пользователь: {data.get('username')}")
+            print(f"  Использовано: {data.get('used', 0)}/{data.get('limit', 0)}")
+            print(f"  Истекает: {datetime.fromtimestamp(data.get('expires', 0))}")
+            print()
+        exit(0)
+    
+    if args.cli:
         # Запуск в CLI режиме
         run_cli(args)
     else:
         # Запуск TUI
         try:
             stdscr = curses.initscr()
-            curses.noecho()  # Не показывать ввод клавиш
-            curses.cbreak()  # Не требовать Enter для ввода
-            stdscr.keypad(True)  # Обрабатывать специальные клавиши
+            curses.noecho()
+            curses.cbreak()
+            stdscr.keypad(True)
             
             tui = TUI(stdscr)
             tui.run()
             
             tui.cleanup()
         except Exception as e:
-            # Важно: всегда восстанавливать терминал
             try:
                 curses.endwin()
             except:
