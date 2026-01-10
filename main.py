@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-VPN Checker v15.1 - Consolidated Edition with TUI & Token Support
-Гибрид v13.0 и v14.0 с оптимальными улучшениями + TUI интерфейс + Поддержка токенов
+VPN Checker v15.2 - GitHub Edition (No Tokens)
+Без системы токенов, для публичного GitHub репозитория
 """
 
 import os
 import re
-import socket
 import ssl
+import socket
 import time
 import json
-import requests
 import base64
 import shutil
 import hashlib
@@ -19,110 +18,136 @@ import statistics
 import argparse
 import curses
 import signal
+import threading
+import fcntl
+import ipaddress
 from dataclasses import dataclass, asdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta
+from datetime import datetime
 from collections import defaultdict
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List, Tuple, Any
+from urllib.parse import urlparse, unquote
+import requests
 
 # ==================== КОНФИГУРАЦИЯ ====================
-@dataclass
+@dataclass(frozen=True)
 class Config:
-    """Централизованная конфигурация"""
+    """Неизменяемая конфигурация"""
     BASE_DIR: str = "checked"
     FOLDER_RU: str = "checked/RU_Best"
     FOLDER_EURO: str = "checked/My_Euro"
     
     # Производительность
     TIMEOUT: int = 5
-    THREADS: int = 50
     CACHE_HOURS: int = 12
     CHUNK_LIMIT: int = 1000
     MAX_KEYS: int = 15000
     RETRY_ATTEMPTS: int = 2
     
-    # Включить продвинутые проверки (замедляют работу!)
-    ENABLE_BANDWIDTH_TEST: bool = False  # Требует ~3 сек на ключ
-    ENABLE_JITTER_TEST: bool = False     # Требует ~0.5 сек на ключ
-    
     # Пороги качества
     MIN_QUALITY_SCORE: float = 30.0
     MAX_JITTER_MS: int = 50
     MIN_BANDWIDTH_MBPS: float = 1.0
+    THREADS: int = 50
+    ENABLE_JITTER_TEST: bool = False
+    ENABLE_BANDWIDTH_TEST: bool = False
     
     # Файлы
     HISTORY_FILE: str = "checked/history.json"
     ANALYTICS_FILE: str = "checked/analytics.json"
     BLACKLIST_FILE: str = "checked/blacklist.json"
-    TOKENS_FILE: str = "checked/tokens.json"  # Файл с токенами пользователей
-    ACCESS_LOG_FILE: str = "checked/access_log.json"  # Лог использования
     
     MY_CHANNEL: str = "@vlesstrojan"
+    LOCK_TIMEOUT: float = 5.0
 
 CFG = Config()
 
-# Источники (вынесены отдельно для удобства)
+# Источники (без пробелов)
 URLS_RU = [
-    "https://raw.githubusercontent.com/zieng2/wl/main/vless.txt  ",
-    "https://raw.githubusercontent.com/LowiKLive/BypassWhitelistRu/refs/heads/main/WhiteList-Bypass_Ru.txt  ",
-    "https://raw.githubusercontent.com/zieng2/wl/main/vless_universal.txt  ",
-    "https://raw.githubusercontent.com/vsevjik/OBSpiskov/refs/heads/main/wwh  ",
-    "https://etoneya.a9fm.site/1  ",
-    "https://raw.githubusercontent.com/Kirillo4ka/vpn-configs-for-russia/refs/heads/main/Vless-Rus-Mobile-White-List.txt  ",
-    "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Mobile.txt  ",
-    "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Cable.txt  ",
-    "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_SS%2BAll_RUS.txt  ",
-    "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS.txt  ",
-    "https://raw.githubusercontent.com/Mosifree/-FREE2CONFIG/refs/heads/main/Reality ",
-    "https://raw.githubusercontent.com/STR97/STRUGOV/refs/heads/main/STR.BYPASS ",
+    "https://raw.githubusercontent.com/zieng2/wl/main/vless.txt",
+    "https://raw.githubusercontent.com/LowiKLive/BypassWhitelistRu/refs/heads/main/WhiteList-Bypass_Ru.txt",
+    "https://raw.githubusercontent.com/zieng2/wl/main/vless_universal.txt",
+    "https://raw.githubusercontent.com/vsevjik/OBSpiskov/refs/heads/main/wwh",
+    "https://etoneya.a9fm.site/1",
+    "https://raw.githubusercontent.com/Kirillo4ka/vpn-configs-for-russia/refs/heads/main/Vless-Rus-Mobile-White-List.txt",
+    "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Mobile.txt",
+    "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Cable.txt",
+    "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_SS%2BAll_RUS.txt",
+    "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS.txt",
+    "https://raw.githubusercontent.com/Mosifree/-FREE2CONFIG/refs/heads/main/Reality",
+    "https://raw.githubusercontent.com/STR97/STRUGOV/refs/heads/main/STR.BYPASS",
 ]
 
 URLS_MY = [
-    "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/refs/heads/main/githubmirror/new/all_new.txt  ",
-    "https://raw.githubusercontent.com/crackbest/V2ray-Config/refs/heads/main/config.txt  ",
-    "https://raw.githubusercontent.com/miladtahanian/multi-proxy-config-fetcher/refs/heads/main/configs/proxy_configs.txt  ",
-    "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/refs/heads/main/Countries/Latvia.txt  ",
-    "https://raw.githubusercontent.com/STR97/STRUGOV/refs/heads/main/BYPASS ",
+    "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/refs/heads/main/githubmirror/new/all_new.txt",
+    "https://raw.githubusercontent.com/crackbest/V2ray-Config/refs/heads/main/config.txt",
+    "https://raw.githubusercontent.com/miladtahanian/multi-proxy-config-fetcher/refs/heads/main/configs/proxy_configs.txt",
+    "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/refs/heads/main/Countries/Latvia.txt",
+    "https://raw.githubusercontent.com/STR97/STRUGOV/refs/heads/main/BYPASS",
 ]
 
-# Коды стран и маркеры
+# Маркеры
 EURO_CODES = {"NL", "DE", "FI", "GB", "FR", "SE", "PL", "CZ", "AT", "CH", "IT", "ES", "NO", "DK", "BE", "IE", "LU", "EE", "LV", "LT", "RO", "BG", "HR", "SI", "SK", "HU", "PT", "GR", "CY", "MT"}
 BAD_MARKERS = ["CN", "IR", "KR", "BR", "IN", "RELAY", "POOL", "🇨🇳", "🇮🇷", "🇰🇷", "TR", "SA", "AE"]
 WHITE_MARKERS = ["white", "whitelist", "bypass", "россия", "russia", "mobile", "cable", "госуслуг", "government", "banking", "bank", "RU", "МТС", "Beeline"]
 BLACK_MARKERS = ["black", "blacklist", "full", "global", "universal", "all", "vpn", "proxy", "tunnel", "freedom"]
 
 # ==================== УТИЛИТЫ ====================
-def load_json(path: str) -> dict:
-    if os.path.exists(path):
+class FileLock:
+    """Потокобезопасная файловая блокировка"""
+    def __init__(self, file_path: str):
+        self.file_path = file_path
+        self.lock_file = None
+        self._thread_lock = threading.Lock()
+    
+    def __enter__(self):
+        self._thread_lock.acquire()
+        dir_path = os.path.dirname(self.file_path) or "."
+        os.makedirs(dir_path, exist_ok=True)
+        self.lock_file = open(self.file_path + ".lock", "w")
         try:
-            with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception as e:
-            print(f"⚠️ Ошибка чтения {path}: {e}")
-    return {}
+            fcntl.flock(self.lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            self.lock_file.close()
+            self._thread_lock.release()
+            raise TimeoutError(f"Не удалось получить lock для {self.file_path}")
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.lock_file:
+            fcntl.flock(self.lock_file.fileno(), fcntl.LOCK_UN)
+            self.lock_file.close()
+        self._thread_lock.release()
 
-def save_json(path: str, data: dict):
+def load_json(path: str) -> dict:
+    if not os.path.exists(path):
+        return {}
     try:
-        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"⚠️ Ошибка чтения {path}: {e}")
+        return {}
+
+def save_json(path: str, data: Any):
+    try:
+        dir_path = os.path.dirname(path) or "."
+        os.makedirs(dir_path, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception as e:
         print(f"⚠️ Ошибка записи {path}: {e}")
 
 def get_hash(key: str) -> str:
-    return hashlib.sha256(key.encode()).hexdigest()[:16]
+    return hashlib.sha256(key.encode('utf-8')).hexdigest()[:16]
 
-def extract_ping(key_str: str) -> Optional[int]:
+def extract_ping(key_str: str) -> int:
     try:
         label = key_str.split("#")[-1]
-        if "ms" not in label:
-            return None
-        ping_part = label.split("ms")[0].split("_")[-1]
-        return int(ping_part)
+        ping_part = re.search(r'(\d+)ms', label)
+        return int(ping_part.group(1)) if ping_part else 999999
     except:
-        return None
-
-from urllib.parse import unquote
+        return 999999
 
 # ==================== КЛАССЫ ДАННЫХ ====================
 @dataclass
@@ -133,6 +158,10 @@ class KeyMetrics:
     uptime: Optional[float] = None
     last_check: float = 0
     check_count: int = 0
+    
+    def __post_init__(self):
+        if self.latency < 0:
+            raise ValueError("Latency не может быть отрицательной")
 
 @dataclass
 class KeyInfo:
@@ -146,179 +175,62 @@ class KeyInfo:
     def quality_score(self) -> float:
         score = 100.0
         
-        # Latency (50%)
-        if self.metrics.latency > 500: score -= 50
-        elif self.metrics.latency > 300: score -= 35
-        elif self.metrics.latency > 200: score -= 20
-        elif self.metrics.latency > 100: score -= 10
+        # Обрабатываем latency=0 как очень быстрое соединение
+        latency = self.metrics.latency if self.metrics.latency > 0 else 1
         
-        # Jitter (20%)
+        if latency > 500: score -= 50
+        elif latency > 300: score -= 35
+        elif latency > 200: score -= 20
+        elif latency > 100: score -= 10
+        
         if self.metrics.jitter and self.metrics.jitter > 50:
             score -= 20
         elif self.metrics.jitter and self.metrics.jitter > 30:
             score -= 10
         
-        # Bandwidth (20%)
         if self.metrics.bandwidth:
             if self.metrics.bandwidth < 1: score -= 20
             elif self.metrics.bandwidth < 5: score -= 10
         
-        # Uptime (10%)
         if self.metrics.uptime is not None:
             score -= (100 - self.metrics.uptime) * 0.1
         
-        return max(0, score)
+        return max(0.0, score)
     
-    def get_emoji(self) -> str:
+    def get_icon(self) -> str:
         q = self.quality_score()
-        if q >= 80: return "⭐"
-        if q >= 60: return "✅"
-        if q >= 40: return "⚡"
-        return "⚠️"
-
-# ==================== ТОКЕН МЕНЕДЖЕР ====================
-class TokenManager:
-    """Управление токенами пользователей"""
-    
-    def __init__(self, tokens_file: str):
-        self.tokens_file = tokens_file
-        self.tokens = load_json(tokens_file)
-    
-    def generate_token(self, username: str, tier: str = "free", limit: int = 1000, days: int = 30) -> str:
-        """Генерировать новый токен для пользователя"""
-        import secrets
-        token = secrets.token_urlsafe(32)
-        
-        self.tokens[token] = {
-            "username": username,
-            "tier": tier,
-            "limit": limit,
-            "used": 0,
-            "created": time.time(),
-            "expires": time.time() + (days * 86400),
-            "devices": {}  # device_fingerprint: {last_seen, user_agent}
-        }
-        
-        self.save()
-        return token
-    
-    def validate_token(self, token: str) -> bool:
-        """Проверить валидность токена"""
-        if token not in self.tokens:
-            return False
-        
-        user = self.tokens[token]
-        now = time.time()
-        
-        # Проверяем срок действия
-        if now > user["expires"]:
-            return False
-        
-        # Проверяем лимит использования
-        if user["used"] >= user["limit"]:
-            return False
-        
-        return True
-    
-    def record_usage(self, token: str, device_fingerprint: str, user_agent: str = None):
-        """Записать использование токена"""
-        if token not in self.tokens:
-            return False
-        
-        user = self.tokens[token]
-        
-        # Увеличиваем счетчик
-        user["used"] += 1
-        
-        # Обновляем информацию об устройстве
-        user["devices"][device_fingerprint] = {
-            "last_seen": time.time(),
-            "user_agent": user_agent,
-            "first_seen": user["devices"].get(device_fingerprint, {}).get("first_seen", time.time())
-        }
-        
-        self.save()
-        return True
-    
-    def get_token_info(self, token: str) -> Optional[Dict]:
-        """Получить информацию о токене"""
-        return self.tokens.get(token)
-    
-    def list_tokens(self) -> Dict:
-        """Получить все токены"""
-        return self.tokens
-    
-    def revoke_token(self, token: str):
-        """Отозвать токен"""
-        if token in self.tokens:
-            self.tokens[token]["expires"] = 0
-            self.save()
-    
-    def save(self):
-        """Сохранить токены в файл"""
-        save_json(self.tokens_file, self.tokens)
-
-# ==================== КЛАССИФИКАТОР ====================
-class SmartClassifier:
-    """Улучшенная классификация с правилами и весами"""
-    
-    def __init__(self):
-        self.weights = {
-            'reality': 10, 'ws': -3, 'grpc': 2, 'tls': 5, 'port_443': 3,
-            'white_words': 5, 'black_words': -8, 'path_obfuscation': -3
-        }
-    
-    def predict(self, key: str) -> str:
-        key_lower = key.lower()
-        score = 0
-        
-        # Проверка комментария (высший приоритет)
-        if "#" in key:
-            comment = key.split("#")[-1].lower()
-            if any(m in comment for m in WHITE_MARKERS): return 'white'
-            if any(m in comment for m in BLACK_MARKERS): return 'black'
-        
-        # Технические признаки
-        features = {
-            'reality': 'security=reality' in key_lower,
-            'ws': 'type=ws' in key_lower,
-            'grpc': 'grpc' in key_lower,
-            'tls': 'security=tls' in key_lower,
-            'port_443': ':443' in key,
-            'white_words': any(w in key_lower for w in WHITE_MARKERS),
-            'black_words': any(w in key_lower for w in BLACK_MARKERS),
-            'path_obfuscation': self._is_obfuscated_path(key_lower)
-        }
-        
-        for name, present in features.items():
-            score += self.weights.get(name, 0) * (1 if present else 0)
-        
-        if score > 10: return 'white'
-        if score < -5: return 'black'
-        return 'universal'
-    
-    def _is_obfuscated_path(self, key: str) -> bool:
-        if 'path=' not in key: return False
-        path = re.search(r'path=([^&\s]+)', key)
-        if not path: return False
-        path_val = unquote(path.group(1)).lower()
-        return len(path_val) > 25 or any(c in path_val for c in ['?', '&', '%', '='])
+        if q >= 80: return "⭐"  # Звезда
+        if q >= 60: return "✅"  # Галочка
+        if q >= 40: return "⚡"  # Молния
+        return "⚠️"  # Предупреждение
 
 # ==================== BLACKLIST ====================
 class BlacklistManager:
     def __init__(self, file_path: str):
         self.file_path = file_path
+        self._lock = threading.Lock()
         data = load_json(file_path)
         self.hosts = set(data.get('hosts', []))
         self.reasons = data.get('reasons', {})
     
     def add(self, host: str, reason: str):
-        self.hosts.add(host)
-        self.reasons[host] = {'reason': reason, 'added': time.time()}
-        self.save()
+        with self._lock:
+            self.hosts.add(host)
+            self.reasons[host] = {
+                'reason': reason[:100],
+                'added': time.time(),
+                'failures': 0
+            }
+            self.save()
+    
+    def record_failure(self, host: str):
+        with self._lock:
+            if host in self.hosts:
+                self.reasons[host]['failures'] += 1
     
     def is_blacklisted(self, host: str) -> bool:
-        return host in self.hosts
+        with self._lock:
+            return host in self.hosts
     
     def save(self):
         save_json(self.file_path, {'hosts': list(self.hosts), 'reasons': self.reasons})
@@ -327,69 +239,101 @@ class BlacklistManager:
 class Analytics:
     def __init__(self, file_path: str):
         self.file_path = file_path
+        self._lock = threading.Lock()
         self.data = load_json(file_path)
         self.session = {'start': time.time(), 'total': 0, 'success': 0}
     
     def record(self, key_id: str, success: bool, latency: Optional[int] = None):
-        if key_id not in self.data:
-            self.data[key_id] = {'created': time.time(), 'checks': []}
-        
-        self.data[key_id]['checks'].append({
-            'time': time.time(),
-            'success': success,
-            'latency': latency
-        })
-        
-        # Храним только последние 50 проверок
-        self.data[key_id]['checks'] = self.data[key_id]['checks'][-50:]
-        self.session['total'] += 1
-        if success: self.session['success'] += 1
+        with self._lock:
+            if key_id not in self.data:
+                self.data[key_id] = {'created': time.time(), 'checks': []}
+            
+            self.data[key_id]['checks'].append({
+                'time': time.time(),
+                'success': success,
+                'latency': latency
+            })
+            
+            self.data[key_id]['checks'] = self.data[key_id]['checks'][-50:]
+            self.session['total'] += 1
+            if success: self.session['success'] += 1
     
     def get_uptime(self, key_id: str) -> Optional[float]:
-        if key_id not in self.data: return None
-        checks = self.data[key_id]['checks']
-        if not checks: return None
-        recent = checks[-20:]
-        success = sum(1 for c in recent if c['success'])
-        return (success / len(recent)) * 100
+        with self._lock:
+            if key_id not in self.data: return None
+            checks = self.data[key_id]['checks']
+            if not checks: return None
+            recent = checks[-20:]
+            success = sum(1 for c in recent if c['success'])
+            return (success / len(recent)) * 100
     
     def save(self):
         save_json(self.file_path, self.data)
 
 # ==================== ПРОВЕРКА СОЕДИНЕНИЯ ====================
 class ConnectionChecker:
-    """Все проверки соединений в одном месте"""
-    
     @staticmethod
     def check_basic(host: str, port: int, is_tls: bool) -> Optional[int]:
-        """Базовая проверка latency"""
         try:
+            # Определяем семейство адресов
+            family = socket.AF_INET
+            try:
+                ip = ipaddress.ip_address(host)
+                if isinstance(ip, ipaddress.IPv6Address):
+                    family = socket.AF_INET6
+            except ValueError:
+                # Если не IP, пытаемся резолвить как домен
+                pass
+            
             start = time.time()
             if is_tls:
                 ctx = ssl.create_default_context()
                 ctx.check_hostname = False
                 ctx.verify_mode = ssl.CERT_NONE
-                with socket.create_connection((host, port), timeout=CFG.TIMEOUT) as sock:
-                    with ctx.wrap_socket(sock, server_hostname=host):
-                        pass
+                sock = socket.socket(family, socket.SOCK_STREAM)
+                sock.settimeout(CFG.TIMEOUT)
+                try:
+                    sock.connect((host, port))
+                    sock = ctx.wrap_socket(sock, server_hostname=host)
+                    sock.close()
+                except Exception as e:
+                    sock.close()
+                    raise
             else:
-                with socket.create_connection((host, port), timeout=CFG.TIMEOUT):
-                    pass
-            return int((time.time() - start) * 1000)
-        except:
+                sock = socket.socket(family, socket.SOCK_STREAM)
+                sock.settimeout(CFG.TIMEOUT)
+                try:
+                    sock.connect((host, port))
+                    sock.close()
+                except Exception as e:
+                    sock.close()
+                    raise
+            latency = int((time.time() - start) * 1000)
+            return latency if latency >= 0 else 1
+        except socket.timeout:
+            return None
+        except (socket.error, OSError, ssl.SSLError, Exception):
             return None
     
     @staticmethod
-    def check_jitter(host: str, port: int) -> Optional[int]:
-        """Измерить jitter"""
+    def check_jitter(host: str, port: int, is_tls: bool) -> Optional[int]:
         if not CFG.ENABLE_JITTER_TEST: return None
         
         latencies = []
         for _ in range(5):
             try:
                 start = time.time()
-                with socket.create_connection((host, port), timeout=2):
-                    latencies.append(int((time.time() - start) * 1000))
+                if is_tls:
+                    ctx = ssl.create_default_context()
+                    ctx.check_hostname = False
+                    ctx.verify_mode = ssl.CERT_NONE
+                    with socket.create_connection((host, port), timeout=2) as sock:
+                        with ctx.wrap_socket(sock, server_hostname=host):
+                            pass
+                else:
+                    with socket.create_connection((host, port), timeout=2):
+                        pass
+                latencies.append(int((time.time() - start) * 1000))
                 time.sleep(0.05)
             except:
                 continue
@@ -400,17 +344,25 @@ class ConnectionChecker:
         return None
     
     @staticmethod
-    def check_bandwidth(host: str, port: int) -> Optional[float]:
-        """Измерить пропускную способность (упрощенно)"""
+    def check_bandwidth(host: str, port: int, is_tls: bool) -> Optional[float]:
         if not CFG.ENABLE_BANDWIDTH_TEST: return None
         
         try:
             start = time.time()
             total_bytes = 0
+            ctx = None
+            if is_tls:
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+            
             with socket.create_connection((host, port), timeout=CFG.TIMEOUT) as sock:
+                if ctx:
+                    sock = ctx.wrap_socket(sock, server_hostname=host)
+                
                 sock.settimeout(0.5)
-                sock.sendall(b"GET / HTTP/1.1\r\nHost: test\r\n\r\n")
-                end_time = start + 2  # 2 секунды теста
+                sock.sendall(b"HEAD / HTTP/1.1\r\nHost: {}\r\n\r\n".format(host.encode()))
+                end_time = start + 2
                 
                 while time.time() < end_time:
                     try:
@@ -433,39 +385,103 @@ class ConnectionChecker:
 # ==================== ПАРСИНГ ====================
 def parse_key(key: str) -> Tuple[Optional[str], Optional[int], bool]:
     try:
-        if "@" not in key or ":" not in key: return None, None, False
+        if "@" not in key or ":" not in key:
+            return None, None, False
         
-        part = key.split("@")[1].split("?")[0].split("#")[0]
-        host, port_str = part.rsplit(":", 1)
+        scheme, rest = key.split("://", 1) if "://" in key else ("", key)
+        if "@" not in rest:
+            return None, None, False
+        
+        user_info, rest = rest.split("@", 1)
+        if "?" in rest:
+            host_port, _ = rest.split("?", 1)
+        elif "#" in rest:
+            host_port, _ = rest.split("#", 1)
+        else:
+            host_port = rest
+        
+        if host_port.startswith("["):
+            if "]:" not in host_port:
+                return None, None, False
+            host, port_str = host_port.rsplit("]:", 1)
+            host = host[1:]
+        else:
+            if ":" not in host_port:
+                return None, None, False
+            host, port_str = host_port.rsplit(":", 1)
+        
         port = int(port_str.strip())
+        if port <= 0 or port > 65535:
+            return None, None, False
         
-        if port <= 0 or port > 65535: return None, None, False
-        
-        is_tls = any(x in key.lower() for x in ['security=tls', 'security=reality']) or \
-                 key.startswith(("trojan://", "vmess://"))
+        is_tls = scheme in ("trojan", "vmess") or any(x in key.lower() for x in ['security=tls', 'security=reality'])
         
         return host.strip(), port, is_tls
     except:
         return None, None, False
 
 def get_country(key: str, host: str) -> str:
-    """Определить страну по TLD и коду"""
     host_lower = host.lower()
-    key_upper = key.upper()
     
-    tld_map = {'.ru': 'RU', '.de': 'DE', '.nl': 'NL', '.fr': 'FR', '.uk': 'GB', '.lv': 'LV', '.eu': 'EU'}
+    tld_map = {'.ru': 'RU', '.de': 'DE', '.nl': 'NL', '.fr': 'FR', '.uk': 'GB', '.lv': 'LV', '.eu': 'EU', '.com': 'US'}
+    parsed = urlparse(f"//{host}")
+    domain = parsed.hostname or host
+    
     for tld, code in tld_map.items():
-        if host_lower.endswith(tld): return code
+        if domain.endswith(tld):
+            return code
     
     for code in EURO_CODES:
-        if code in key_upper: return code
+        if f"={code}" in key or f"&{code}" in key:
+            return code
     
     return "UNKNOWN"
 
 def is_garbage(key: str) -> bool:
     upper = key.upper()
-    return any(m in upper for m in BAD_MARKERS) or \
-           any(x in key for x in [".ir", ".cn", "127.0.0.1", "localhost", "0.0.0.0"])
+    
+    if "://" in key:
+        try:
+            _, rest = key.split("://", 1)
+            if "@" in rest:
+                domain_part = rest.split("@")[1].split("?")[0].split("#")[0]
+                if any(domain_part.endswith(tld) for tld in ['.ir', '.cn']):
+                    return True
+                if any(ip in domain_part for ip in ['127.0.0.1', 'localhost', '0.0.0.0']):
+                    return True
+        except:
+            pass
+    
+    if any(m in upper for m in BAD_MARKERS):
+        return True
+    
+    return False
+
+# ==================== КЛАССИФИКАЦИЯ ====================
+class SmartClassifier:
+    """Классифицирует ключи на white/black/universal списки"""
+    
+    def predict(self, key: str) -> str:
+        """
+        Возвращает тип списка: 'white', 'black' или 'universal'
+        """
+        key_upper = key.upper()
+        key_lower = key.lower()
+        
+        # Преобразуем маркеры в верхний регистр для сравнения
+        white_markers_upper = [m.upper() for m in WHITE_MARKERS]
+        black_markers_upper = [m.upper() for m in BLACK_MARKERS]
+        
+        # Проверка на белый список (whitelist/bypass) - приоритет выше
+        if any(marker in key_upper for marker in white_markers_upper):
+            return "white"
+        
+        # Проверка на черный список (blacklist/full/global)
+        if any(marker in key_upper for marker in black_markers_upper):
+            return "black"
+        
+        # По умолчанию - универсальный
+        return "universal"
 
 # ==================== ЗАГРУЗКА КЛЮЧЕЙ ====================
 def fetch_keys(urls: List[str], tag: str) -> List[Tuple[str, str]]:
@@ -477,43 +493,69 @@ def fetch_keys(urls: List[str], tag: str) -> List[Tuple[str, str]]:
     
     for url in urls:
         url = url.strip()
-        if not url: continue
+        if not url or "://" not in url:
+            continue
         
         print(f"  ➜ {url[:60]}...")
         try:
             resp = session.get(url, timeout=15)
-            if resp.status_code != 200: continue
+            resp.raise_for_status()
             
-            content = resp.text
+            content = resp.text.strip()
+            if not content:
+                print(f"    ❌ Пустой ответ")
+                continue
+            
             lines = []
             if "://" not in content[:100]:
                 try:
-                    decoded = base64.b64decode(content + "==").decode('utf-8', errors='ignore')
+                    missing_padding = -len(content) % 4
+                    if missing_padding:
+                        content += "=" * missing_padding
+                    decoded = base64.b64decode(content, validate=True).decode('utf-8', errors='ignore')
                     lines = decoded.splitlines()
-                except:
+                except Exception as e:
+                    print(f"    ⚠️ Base64 decode failed: {e}")
                     lines = content.splitlines()
             else:
                 lines = content.splitlines()
             
             loaded = 0
+            # Определяем тип источника по URL
+            url_upper = url.upper()
+            source_type = None
+            if "BLACK" in url_upper or "/black" in url_upper.lower():
+                source_type = "black"
+            elif any(m in url_upper for m in ["WHITE", "BYPASS", "WHITELIST"]):
+                source_type = "white"
+            
             for line in lines:
                 line = line.strip()
-                if not line or len(line) > 2000: continue
-                if line.startswith(("vless://", "vmess://", "trojan://", "ss://")):
+                if line and len(line) < 2000 and "://" in line:
                     if not is_garbage(line):
+                        # Если в источнике указан тип, добавляем маркер в ключ
+                        if source_type and "#" in line:
+                            key_part, label_part = line.rsplit("#", 1)
+                            # Добавляем маркер типа источника в метку
+                            if source_type not in label_part.upper():
+                                line = f"{key_part}#{source_type}_{label_part}"
+                        elif source_type:
+                            # Если нет метки, добавляем маркер
+                            line = f"{line}#{source_type}_source"
                         out.append((line, tag))
                         loaded += 1
             
             if loaded: print(f"    ✅ {loaded}")
+        except requests.exceptions.RequestException as e:
+            print(f"    ❌ HTTP error: {e}")
         except Exception as e:
             print(f"    ❌ {e}")
     
     print(f"📊 {tag}: {len(out)} ключей")
     return out
 
-# ==================== ФОРМАТИРОВАНИЕ И СОХРАНЕНИЕ ====================
+# ==================== ФОРМАТИРОВАНИЕ ====================
 def format_label(key_info: KeyInfo) -> str:
-    """Создать читаемую метку"""
     parts = [
         f"{key_info.metrics.latency}ms",
         key_info.country,
@@ -529,24 +571,29 @@ def format_label(key_info: KeyInfo) -> str:
     if key_info.metrics.uptime and key_info.metrics.uptime < 100:
         parts.append(f"UP{int(key_info.metrics.uptime)}")
     
-    parts.append(key_info.get_emoji())
+    # Добавляем белый флаг для белого списка
+    if key_info.routing_type == "white":
+        parts.append("🏳️")
+    
+    parts.append(key_info.get_icon())
     parts.append(CFG.MY_CHANNEL)
     
     return "_".join(parts)
 
 def save_chunked(keys_list: List[str], folder: str, base_name: str) -> List[str]:
-    """Сохранить файлы по частям"""
     created_files = []
     valid_keys = [k.strip() for k in keys_list if k and isinstance(k, str) and k.strip()]
     
     if not valid_keys:
         fname = f"{base_name}.txt"
+        os.makedirs(folder, exist_ok=True)
         with open(os.path.join(folder, fname), "w", encoding="utf-8") as f:
             f.write("")
         return [fname]
     
     chunks = [valid_keys[i:i + CFG.CHUNK_LIMIT] for i in range(0, len(valid_keys), CFG.CHUNK_LIMIT)]
     
+    os.makedirs(folder, exist_ok=True)
     for i, chunk in enumerate(chunks, 1):
         fname = f"{base_name}.txt" if len(chunks) == 1 else f"{base_name}_part{i}.txt"
         with open(os.path.join(folder, fname), "w", encoding="utf-8") as f:
@@ -556,40 +603,36 @@ def save_chunked(keys_list: List[str], folder: str, base_name: str) -> List[str]
     
     return created_files
 
-# ==================== TUI (TEXT USER INTERFACE) ====================
+# ==================== TUI ====================
 class TUI:
-    """Текстовый интерфейс для управления VPN Checker"""
-    
     def __init__(self, stdscr):
         self.stdscr = stdscr
         self.height, self.width = stdscr.getmaxyx()
         self.current_row = 0
         self.menu_items = [
-            "🚀 Быстрая проверка",
-            "🔍 Полная проверка (с метриками)",
-            "⚙️  Настройки",
-            "🗑️  Очистить кэш",
-            "📊 Статистика",
-            "🔑 Управление токенами",  # Новый пункт меню
-            "❌ Выход"
+            "1. Быстрая проверка",
+            "2. Полная проверка (с метриками)",
+            "3. Настройки",
+            "4. Очистить кэш",
+            "5. Статистика",
+            "6. Выход"
         ]
         self.settings = {
-            "threads": CFG.THREADS,
+            "threads": 50,
             "max_keys": CFG.MAX_KEYS,
             "timeout": CFG.TIMEOUT,
-            "enable_bandwidth": CFG.ENABLE_BANDWIDTH_TEST,
-            "enable_jitter": CFG.ENABLE_JITTER_TEST,
+            "enable_bandwidth": False,
+            "enable_jitter": False,
             "min_quality": CFG.MIN_QUALITY_SCORE
         }
         signal.signal(signal.SIGINT, self.signal_handler)
+        signal.signal(signal.SIGTSTP, lambda s, f: self.cleanup())
     
     def signal_handler(self, signum, frame):
-        """Обработка Ctrl+C"""
         self.cleanup()
         exit(0)
     
     def cleanup(self):
-        """Очистка curses"""
         try:
             curses.nocbreak()
             self.stdscr.keypad(False)
@@ -599,80 +642,281 @@ class TUI:
             pass
     
     def draw_menu(self):
-        """Отрисовка главного меню"""
         self.stdscr.clear()
         self.height, self.width = self.stdscr.getmaxyx()
         
-        # Заголовок
-        title = " VPN Checker v15.1 - TUI Mode "
+        title = "VPN Checker v15.2 - GitHub Edition"
         self.stdscr.attron(curses.A_BOLD | curses.A_REVERSE)
-        self.stdscr.addstr(0, (self.width - len(title)) // 2, title)
+        self.stdscr.addstr(0, max(0, (self.width - len(title)) // 2), title[:self.width-1])
         self.stdscr.attroff(curses.A_BOLD | curses.A_REVERSE)
         
-        # Информация
         info_y = 2
-        self.stdscr.addstr(info_y, 2, f"📂 Директория: {CFG.BASE_DIR}", curses.A_DIM)
-        self.stdscr.addstr(info_y + 1, 2, f"🔧 Потоков: {self.settings['threads']} | 🔑 Макс. ключей: {self.settings['max_keys']}", curses.A_DIM)
-        self.stdscr.addstr(info_y + 2, 2, f"⏱️  Таймаут: {self.settings['timeout']}с | 📶 Метрики: {'✅' if self.settings['enable_bandwidth'] else '❌'} Bw {'✅' if self.settings['enable_jitter'] else '❌'} Jitter", curses.A_DIM)
+        self.stdscr.addstr(info_y, 2, f"📂 Директория: {CFG.BASE_DIR}"[:self.width-3], curses.A_DIM)
+        self.stdscr.addstr(info_y + 1, 2, f"🔧 Потоков: {self.settings['threads']} | 🔑 Макс. ключей: {self.settings['max_keys']}"[:self.width-3], curses.A_DIM)
+        self.stdscr.addstr(info_y + 2, 2, f"⏱️  Таймаут: {self.settings['timeout']}с | 📶 Метрики: {'✅' if self.settings['enable_bandwidth'] else '❌'} Bw {'✅' if self.settings['enable_jitter'] else '❌'} Jitter"[:self.width-3], curses.A_DIM)
         
-        # Меню
         menu_y = info_y + 4
         for idx, item in enumerate(self.menu_items):
-            x = (self.width - len(item)) // 2
-            y = menu_y + idx * 2
+            x = max(0, (self.width - len(item)) // 2)
+            y = menu_y + idx
             
             if idx == self.current_row:
                 self.stdscr.attron(curses.A_REVERSE)
-                self.stdscr.addstr(y, x, item)
+                self.stdscr.addstr(y, x, item[:self.width-x-1])
                 self.stdscr.attroff(curses.A_REVERSE)
             else:
-                self.stdscr.addstr(y, x, item)
+                self.stdscr.addstr(y, x, item[:self.width-x-1])
         
-        # Подсказки
-        hint_y = self.height - 3
-        hint = "Используйте ↑↓ для навигации, Enter для выбора, q для выхода"
-        self.stdscr.addstr(hint_y, (self.width - len(hint)) // 2, hint, curses.A_DIM)
+        hint = "↑↓ - навигация, Enter - выбрать, q - выход"
+        self.stdscr.addstr(self.height - 1, max(0, (self.width - len(hint)) // 2), hint[:self.width-1], curses.A_DIM)
         
         self.stdscr.refresh()
     
-    def draw_settings(self):
-        """Отрисовка меню настроек"""
+    def run_check(self, fast: bool = False):
+        try:
+            local_config = {
+                'THREADS': self.settings['threads'],
+                'MAX_KEYS': self.settings['max_keys'],
+                'TIMEOUT': self.settings['timeout'],
+                'ENABLE_BANDWIDTH_TEST': self.settings['enable_bandwidth'] if not fast else False,
+                'ENABLE_JITTER_TEST': self.settings['enable_jitter'] if not fast else False,
+                'MIN_QUALITY_SCORE': self.settings['min_quality']
+            }
+            
+            for folder in [CFG.FOLDER_RU, CFG.FOLDER_EURO]:
+                if os.path.exists(folder): shutil.rmtree(folder)
+                os.makedirs(folder, exist_ok=True)
+            
+            classifier = SmartClassifier()
+            checker = ConnectionChecker()
+            analytics = Analytics(CFG.ANALYTICS_FILE)
+            blacklist = BlacklistManager(CFG.BLACKLIST_FILE)
+            
+            self._draw_progress(0.1, "Загрузка источников...")
+            tasks_ru = fetch_keys(URLS_RU, "RU")
+            tasks_my = fetch_keys(URLS_MY, "MY")
+            
+            unique = {get_hash(k.split("#")[0]): (k, t) for k, t in tasks_ru + tasks_my}
+            all_items = list(unique.values())[:local_config['MAX_KEYS']]
+            
+            self._draw_progress(0.2, "Проверка кэша...")
+            current_time = time.time()
+            to_check = []
+            results = {
+                "ru_white": [], "ru_black": [], "ru_universal": [],
+                "euro_white": [], "euro_black": [], "euro_universal": []
+            }
+            cache_hits = 0
+            
+            history = load_json(CFG.HISTORY_FILE)
+            for key, tag in all_items:
+                key_id = get_hash(key.split("#")[0])
+                cached = history.get(key_id)
+                
+                if cached and (current_time - cached['time'] < CFG.CACHE_HOURS * 3600) and cached.get('alive'):
+                    metrics = KeyMetrics(latency=cached['latency'], last_check=cached['time'])
+                    routing_type = cached.get('routing_type', 'universal')
+                    country = cached.get('country', 'UNKNOWN')
+                    key_info = KeyInfo(key, key_id, tag, country, routing_type, metrics)
+                    label = format_label(key_info)
+                    final = f"{key.split('#')[0]}#{label}"
+                    category = f"{'euro' if tag == 'MY' else tag.lower()}_{routing_type}"
+                    
+                    if not (tag == "MY" and country == "RU"):
+                        results[category].append(final)
+                        cache_hits += 1
+                else:
+                    to_check.append((key, tag))
+            
+            if to_check:
+                checked = 0
+                with ThreadPoolExecutor(max_workers=local_config['THREADS']) as executor:
+                    futures = {executor.submit(self._check_key, item, local_config): item 
+                              for item in to_check}
+                    
+                    for future in as_completed(futures):
+                        checked += 1
+                        progress = 0.5 + (checked / len(to_check)) * 0.5
+                        self._draw_progress(progress, f"Проверка: {checked}/{len(to_check)}")
+                        
+                        try:
+                            result = future.result(timeout=local_config['TIMEOUT'] + 3)
+                            if result:
+                                category, final, key_id = result
+                                results[category].append(final)
+                        except:
+                            pass
+            
+            self._draw_progress(0.95, "Сохранение...")
+            self._save_results(results, history, blacklist, analytics)
+            
+            self._draw_progress(1.0, "Завершено!")
+            time.sleep(1)
+            
+        except KeyboardInterrupt:
+            raise
+        except Exception as e:
+            self._draw_progress(1.0, f"Ошибка: {str(e)}")
+            time.sleep(2)
+            raise
+    
+    def _check_key(self, data, config):
+        key, tag = data
+        
+        host, port, is_tls = parse_key(key)
+        if not host: return None
+        
+        blacklist = BlacklistManager(CFG.BLACKLIST_FILE)
+        if blacklist.is_blacklisted(host): return None
+        
+        key_id = get_hash(key.split("#")[0])
+        
+        latency = None
+        checker = ConnectionChecker()
+        for attempt in range(CFG.RETRY_ATTEMPTS):
+            latency = checker.check_basic(host, port, is_tls)
+            if latency: break
+            time.sleep(0.1 * (attempt + 1))
+        
+        if not latency: return None
+        
+        metrics = KeyMetrics(latency=latency, last_check=time.time())
+        if config['ENABLE_JITTER_TEST'] and latency < 200:
+            metrics.jitter = checker.check_jitter(host, port, is_tls)
+        if config['ENABLE_BANDWIDTH_TEST'] and latency < 300:
+            metrics.bandwidth = checker.check_bandwidth(host, port, is_tls)
+        
+        classifier = SmartClassifier()
+        routing_type = classifier.predict(key)
+        country = get_country(key, host)
+        
+        key_info = KeyInfo(key, key_id, tag, country, routing_type, metrics)
+        if key_info.quality_score() < config['MIN_QUALITY_SCORE']:
+            return None
+        
+        label = format_label(key_info)
+        final = f"{key.split('#')[0]}#{label}"
+        category = f"{'euro' if tag == 'MY' else tag.lower()}_{routing_type}"
+        
+        history = load_json(CFG.HISTORY_FILE)
+        history[key_id] = {
+            'alive': True,
+            'latency': latency,
+            'time': time.time(),
+            'country': country,
+            'routing_type': routing_type
+        }
+        save_json(CFG.HISTORY_FILE, history)
+        
+        return category, final, key_id
+    
+    def _save_results(self, results, history, blacklist, analytics):
+        for cat in results:
+            results[cat].sort(key=extract_ping)
+        
+        save_chunked(results['ru_white'], CFG.FOLDER_RU, "ru_white")
+        save_chunked(results['ru_black'], CFG.FOLDER_RU, "ru_black")
+        save_chunked(results['ru_universal'], CFG.FOLDER_RU, "ru_universal")
+        save_chunked(results['euro_white'], CFG.FOLDER_EURO, "euro_white")
+        save_chunked(results['euro_black'], CFG.FOLDER_EURO, "euro_black")
+        save_chunked(results['euro_universal'], CFG.FOLDER_EURO, "euro_universal")
+        
+        GITHUB_REPO = "Mihuil121/vpn-checker-backend-fox"
+        BASE_RU = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/{CFG.BASE_DIR}/RU_Best"
+        BASE_EU = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/{CFG.BASE_DIR}/My_Euro"
+        
+        subs = ["=== 🇷🇺 РОССИЯ ===", ""]
+        for name, fname in [("⚪ БЕЛЫЙ СПИСОК", "ru_white.txt"),
+                           ("⚫ ЧЕРНЫЙ СПИСОК", "ru_black.txt"),
+                           ("🔘 УНИВЕРСАЛЬНЫЕ", "ru_universal.txt")]:
+            subs.append(f"{name}:")
+            subs.append(f"{BASE_RU}/{fname}")
+            subs.append("")
+        
+        subs.extend(["=== 🇪🇺 ЕВРОПА ===", ""])
+        for name, fname in [("⚪ БЕЛЫЙ СПИСОК", "euro_white.txt"),
+                           ("⚫ ЧЕРНЫЙ СПИСОК", "euro_black.txt"),
+                           ("🔘 УНИВЕРСАЛЬНЫЕ", "euro_universal.txt")]:
+            subs.append(f"{name}:")
+            subs.append(f"{BASE_EU}/{fname}")
+            subs.append("")
+        
+        os.makedirs(CFG.BASE_DIR, exist_ok=True)
+        with open(os.path.join(CFG.BASE_DIR, "subscriptions_list.txt"), "w", encoding="utf-8") as f:
+            f.write("\n".join(subs))
+        
+        cutoff = time.time() - (86400 * 3)
+        history_cleaned = {k: v for k, v in history.items() if v['time'] > cutoff}
+        save_json(CFG.HISTORY_FILE, history_cleaned)
+        blacklist.save()
+        analytics.save()
+    
+    def _draw_progress(self, progress: float, status: str):
         self.stdscr.clear()
         
-        title = " ⚙️  НАСТРОЙКИ "
+        title = "ПРОВЕРКА В ПРОЦЕССЕ"
         self.stdscr.attron(curses.A_BOLD | curses.A_REVERSE)
-        self.stdscr.addstr(0, (self.width - len(title)) // 2, title)
+        self.stdscr.addstr(0, max(0, (self.width - len(title)) // 2), title[:self.width-1])
         self.stdscr.attroff(curses.A_BOLD | curses.A_REVERSE)
         
-        items = [
-            f"1. Потоки: {self.settings['threads']}",
-            f"2. Макс. ключей: {self.settings['max_keys']}",
-            f"3. Таймаут: {self.settings['timeout']}с",
-            f"4. Тест пропускной способности: {'Вкл' if self.settings['enable_bandwidth'] else 'Выкл'}",
-            f"5. Тест jitter: {'Вкл' if self.settings['enable_jitter'] else 'Выкл'}",
-            f"6. Мин. качество: {self.settings['min_quality']}",
-            "7. Сохранить и вернуться",
-            "8. Вернуться без сохранения"
-        ]
+        bar_width = min(60, self.width - 20)
+        bar_x = max(0, (self.width - bar_width) // 2)
+        bar_y = self.height // 2 - 2
         
-        for idx, item in enumerate(items):
-            x = 4
-            y = 3 + idx * 2
-            
-            if idx == self.current_row:
-                self.stdscr.attron(curses.A_REVERSE)
-                self.stdscr.addstr(y, x, item)
-                self.stdscr.attroff(curses.A_REVERSE)
-            else:
-                self.stdscr.addstr(y, x, item)
+        filled = int(bar_width * progress)
+        bar = "█" * filled + "░" * (bar_width - filled)
         
-        hint = "Используйте ↑↓ для навигации, Enter для редактирования"
-        self.stdscr.addstr(self.height - 2, (self.width - len(hint)) // 2, hint, curses.A_DIM)
+        self.stdscr.addstr(bar_y, bar_x, f"[{bar}]"[:self.width-bar_x-1])
+        self.stdscr.addstr(bar_y + 1, bar_x + bar_width // 2 - 5, f"{progress * 100:.1f}%"[:self.width-bar_x-1])
+        self.stdscr.addstr(bar_y + 3, max(0, (self.width - len(status)) // 2), status[:self.width-1])
+        
+        hint = "Ctrl+C - отмена | Ctrl+Z - приостановить"
+        self.stdscr.addstr(self.height - 1, max(0, (self.width - len(hint)) // 2), hint[:self.width-1], curses.A_DIM)
         
         self.stdscr.refresh()
     
-    def edit_setting(self, key: str):
-        """Редактирование параметра"""
+    def show_settings(self):
+        current = 0
+        options = list(self.settings.keys())
+        
+        while True:
+            self.stdscr.clear()
+            
+            title = "НАСТРОЙКИ"
+            self.stdscr.attron(curses.A_BOLD | curses.A_REVERSE)
+            self.stdscr.addstr(0, max(0, (self.width - len(title)) // 2), title[:self.width-1])
+            self.stdscr.attroff(curses.A_BOLD | curses.A_REVERSE)
+            
+            for idx, opt in enumerate(options):
+                y = 3 + idx
+                value = self.settings[opt]
+                display_value = "Вкл" if isinstance(value, bool) and value else \
+                               "Выкл" if isinstance(value, bool) and not value else str(value)
+                line = f"{idx + 1}. {opt.replace('_', ' ').title()}: {display_value}"
+                
+                if idx == current:
+                    self.stdscr.attron(curses.A_REVERSE)
+                    self.stdscr.addstr(y, 2, line[:self.width-3])
+                    self.stdscr.attroff(curses.A_REVERSE)
+                else:
+                    self.stdscr.addstr(y, 2, line[:self.width-3])
+            
+            hint = "↑↓ - выбрать, Enter - редактировать, q - назад"
+            self.stdscr.addstr(self.height - 1, 2, hint[:self.width-3], curses.A_DIM)
+            
+            self.stdscr.refresh()
+            
+            key = self.stdscr.getch()
+            if key == curses.KEY_UP:
+                current = max(0, current - 1)
+            elif key == curses.KEY_DOWN:
+                current = min(len(options) - 1, current + 1)
+            elif key == ord('\n'):
+                self._edit_setting(options[current])
+            elif key == ord('q'):
+                break
+    
+    def _edit_setting(self, key: str):
         self.stdscr.clear()
         self.stdscr.addstr(2, 2, f"Редактирование {key}")
         self.stdscr.addstr(4, 2, f"Текущее значение: {self.settings[key]}")
@@ -682,746 +926,340 @@ class TUI:
         curses.curs_set(1)
         try:
             value = self.stdscr.getstr(6, 28, 20).decode('utf-8')
-            if key in ['threads', 'max_keys', 'timeout']:
-                self.settings[key] = int(value)
-            elif key in ['enable_bandwidth', 'enable_jitter']:
-                self.settings[key] = value.lower() in ['y', 'yes', 'true', '1', 'on']
-            elif key == 'min_quality':
-                self.settings[key] = float(value)
+            if value:
+                if key in ['threads', 'max_keys', 'timeout']:
+                    self.settings[key] = max(1, int(value))
+                elif key in ['enable_bandwidth', 'enable_jitter']:
+                    self.settings[key] = value.lower() in ['y', 'yes', 'true', '1', 'on', 'вкл']
+                elif key == 'min_quality':
+                    self.settings[key] = max(0.0, min(100.0, float(value)))
         except:
             pass
         curses.noecho()
         curses.curs_set(0)
     
     def show_statistics(self):
-        """Показать статистику"""
         self.stdscr.clear()
         
-        title = " 📊 СТАТИСТИКА "
+        title = "СТАТИСТИКА"
         self.stdscr.attron(curses.A_BOLD | curses.A_REVERSE)
-        self.stdscr.addstr(0, (self.width - len(title)) // 2, title)
+        self.stdscr.addstr(0, max(0, (self.width - len(title)) // 2), title[:self.width-1])
         self.stdscr.attroff(curses.A_BOLD | curses.A_REVERSE)
         
         y = 3
         try:
-            # Статистика файлов
             if os.path.exists(CFG.BASE_DIR):
                 total_files = sum(len(files) for _, _, files in os.walk(CFG.BASE_DIR))
-                total_size = sum(os.path.getsize(os.path.join(dp, f)) for dp, _, files in os.walk(CFG.BASE_DIR) for f in files)
+                total_size = sum(os.path.getsize(os.path.join(dp, f))
+                               for dp, _, files in os.walk(CFG.BASE_DIR) for f in files)
                 
-                self.stdscr.addstr(y, 4, f"📁 Файлов: {total_files}")
-                self.stdscr.addstr(y + 1, 4, f"📊 Размер: {total_size / 1024 / 1024:.2f} MB")
+                self.stdscr.addstr(y, 4, f"Файлов: {total_files}")
+                self.stdscr.addstr(y + 1, 4, f"Размер: {total_size / 1024 / 1024:.2f} MB")
             
-            # История
             history = load_json(CFG.HISTORY_FILE)
-            self.stdscr.addstr(y + 3, 4, f"🕒 Записей в истории: {len(history)}")
+            self.stdscr.addstr(y + 3, 4, f"Записей в истории: {len(history)}")
             
-            # Blacklist
             blacklist = load_json(CFG.BLACKLIST_FILE)
-            self.stdscr.addstr(y + 4, 4, f"⛔ Blacklist: {len(blacklist.get('hosts', []))} хостов")
+            self.stdscr.addstr(y + 4, 4, f"Blacklist: {len(blacklist.get('hosts', []))} хостов")
             
-            # Аналитика
             analytics = load_json(CFG.ANALYTICS_FILE)
             total_checks = sum(len(v.get('checks', [])) for v in analytics.values())
-            self.stdscr.addstr(y + 5, 4, f"🔍 Всего проверок: {total_checks}")
-            
-            # Токены
-            tokens = load_json(CFG.TOKENS_FILE)
-            active_tokens = sum(1 for t in tokens.values() if time.time() < t.get('expires', 0))
-            self.stdscr.addstr(y + 6, 4, f"🔑 Токенов: {len(tokens)} (активных: {active_tokens})")
+            self.stdscr.addstr(y + 5, 4, f"Всего проверок: {total_checks}")
             
         except Exception as e:
-            self.stdscr.addstr(y, 4, f"❌ Ошибка загрузки статистики: {e}")
+            self.stdscr.addstr(y, 4, f"Ошибка: {e}"[:self.width-5])
         
-        self.stdscr.addstr(self.height - 2, 2, "Нажмите любую клавишу для возврата...", curses.A_DIM)
+        self.stdscr.addstr(self.height - 2, 2, "Нажмите любую клавишу...")
         self.stdscr.refresh()
         self.stdscr.getch()
     
     def clear_cache(self):
-        """Очистка кэша"""
         self.stdscr.clear()
-        self.stdscr.addstr(2, 2, "🗑️  ОЧИСТКА КЭША")
+        self.stdscr.addstr(2, 2, "ОЧИСТКА КЭША")
         
         try:
             files_cleared = 0
-            if os.path.exists(CFG.HISTORY_FILE):
-                os.remove(CFG.HISTORY_FILE)
-                files_cleared += 1
-            if os.path.exists(CFG.ANALYTICS_FILE):
-                os.remove(CFG.ANALYTICS_FILE)
-                files_cleared += 1
-            if os.path.exists(CFG.BLACKLIST_FILE):
-                os.remove(CFG.BLACKLIST_FILE)
-                files_cleared += 1
+            for f in [CFG.HISTORY_FILE, CFG.ANALYTICS_FILE, CFG.BLACKLIST_FILE]:
+                if os.path.exists(f):
+                    os.remove(f)
+                    files_cleared += 1
             
-            self.stdscr.addstr(4, 4, f"✅ Очищено файлов: {files_cleared}")
+            self.stdscr.addstr(4, 4, f"Очищено файлов: {files_cleared}")
         except Exception as e:
-            self.stdscr.addstr(4, 4, f"❌ Ошибка: {e}")
+            self.stdscr.addstr(4, 4, f"Ошибка: {e}"[:self.width-5])
         
         self.stdscr.addstr(6, 2, "Нажмите любую клавишу...")
         self.stdscr.refresh()
         self.stdscr.getch()
-    
-    def manage_tokens(self):
-        """Управление токенами"""
-        self.stdscr.clear()
-        token_manager = TokenManager(CFG.TOKENS_FILE)
-        
-        while True:
-            self.stdscr.clear()
-            
-            title = " 🔑 УПРАВЛЕНИЕ ТОКЕНАМИ "
-            self.stdscr.attron(curses.A_BOLD | curses.A_REVERSE)
-            self.stdscr.addstr(0, (self.width - len(title)) // 2, title)
-            self.stdscr.attroff(curses.A_BOLD | curses.A_REVERSE)
-            
-            tokens = token_manager.list_tokens()
-            
-            # Список токенов
-            y = 3
-            self.stdscr.addstr(y, 4, "Список токенов:", curses.A_BOLD)
-            y += 2
-            
-            if not tokens:
-                self.stdscr.addstr(y, 4, "Нет активных токенов", curses.A_DIM)
-                y += 2
-            else:
-                for idx, (token, data) in enumerate(list(tokens.items())[:10]):  # Показываем первые 10
-                    status = "✅" if time.time() < data.get('expires', 0) else "❌"
-                    expires = datetime.fromtimestamp(data.get('expires', 0)).strftime('%Y-%m-%d')
-                    line = f"{status} {data.get('username', 'unknown')[:20]:<20} | Использовано: {data.get('used', 0)}/{data.get('limit', 0)} | До: {expires}"
-                    self.stdscr.addstr(y + idx, 4, line[:self.width-6])
-            
-            # Меню действий
-            y += len(tokens) + 3 if tokens else 3
-            actions = [
-                "1. Создать новый токен",
-                "2. Отозвать токен",
-                "3. Показать полный список",
-                "4. Вернуться в главное меню"
-            ]
-            
-            for idx, action in enumerate(actions):
-                self.stdscr.addstr(y + idx, 4, action)
-            
-            hint = "Выберите действие (1-4) или нажмите q для выхода"
-            self.stdscr.addstr(self.height - 2, (self.width - len(hint)) // 2, hint, curses.A_DIM)
-            
-            self.stdscr.refresh()
-            
-            key = self.stdscr.getch()
-            
-            if key == ord('1'):
-                self.create_token_dialog(token_manager)
-            elif key == ord('2'):
-                self.revoke_token_dialog(token_manager)
-            elif key == ord('3'):
-                self.show_all_tokens(token_manager)
-            elif key == ord('4') or key == ord('q'):
-                break
-    
-    def create_token_dialog(self, token_manager: TokenManager):
-        """Диалог создания токена"""
-        self.stdscr.clear()
-        self.stdscr.addstr(2, 2, "🆕 СОЗДАНИЕ НОВОГО ТОКЕНА")
-        
-        # Имя пользователя
-        self.stdscr.addstr(4, 4, "Имя пользователя: ")
-        curses.echo()
-        curses.curs_set(1)
-        username = self.stdscr.getstr(4, 22, 30).decode('utf-8')
-        curses.noecho()
-        curses.curs_set(0)
-        
-        # Тариф
-        self.stdscr.addstr(6, 4, "Тариф (free/basic/pro): ")
-        curses.echo()
-        curses.curs_set(1)
-        tier = self.stdscr.getstr(6, 30, 10).decode('utf-8') or "free"
-        curses.noecho()
-        curses.curs_set(0)
-        
-        # Лимит
-        limits = {"free": 1000, "basic": 10000, "pro": 100000}
-        limit = limits.get(tier, 1000)
-        
-        # Срок действия
-        self.stdscr.addstr(8, 4, "Срок действия (дней): ")
-        curses.echo()
-        curses.curs_set(1)
-        try:
-            days = int(self.stdscr.getstr(8, 27, 5).decode('utf-8') or "30")
-        except:
-            days = 30
-        curses.noecho()
-        curses.curs_set(0)
-        
-        # Генерация токена
-        token = token_manager.generate_token(username, tier, limit, days)
-        
-        self.stdscr.addstr(10, 4, f"✅ Токен создан!", curses.A_BOLD)
-        self.stdscr.addstr(12, 4, f"Токен: {token}", curses.A_REVERSE)
-        self.stdscr.addstr(14, 4, f"Сохраните его! Он показан только сейчас.")
-        self.stdscr.addstr(16, 4, "Нажмите любую клавишу...")
-        
-        self.stdscr.refresh()
-        self.stdscr.getch()
-    
-    def revoke_token_dialog(self, token_manager: TokenManager):
-        """Диалог отзыва токена"""
-        self.stdscr.clear()
-        self.stdscr.addstr(2, 2, "🚫 ОТЗЫВ ТОКЕНА")
-        self.stdscr.addstr(4, 4, "Введите токен для отзыва: ")
-        
-        curses.echo()
-        curses.curs_set(1)
-        token = self.stdscr.getstr(4, 32, 50).decode('utf-8')
-        curses.noecho()
-        curses.curs_set(0)
-        
-        if token_manager.get_token_info(token):
-            token_manager.revoke_token(token)
-            self.stdscr.addstr(6, 4, "✅ Токен отозван", curses.A_BOLD)
-        else:
-            self.stdscr.addstr(6, 4, "❌ Токен не найден", curses.A_BOLD)
-        
-        self.stdscr.addstr(8, 4, "Нажмите любую клавишу...")
-        self.stdscr.refresh()
-        self.stdscr.getch()
-    
-    def show_all_tokens(self, token_manager: TokenManager):
-        """Показать все токены"""
-        self.stdscr.clear()
-        tokens = token_manager.list_tokens()
-        
-        # Сохраняем в текстовый файл для удобства
-        report_file = os.path.join(CFG.BASE_DIR, "tokens_report.txt")
-        with open(report_file, "w", encoding="utf-8") as f:
-            f.write("=== ОТЧЕТ ПО ТОКЕНАМ ===\n\n")
-            for token, data in tokens.items():
-                f.write(f"Токен: {token}\n")
-                f.write(f"  Пользователь: {data.get('username', 'unknown')}\n")
-                f.write(f"  Тариф: {data.get('tier', 'free')}\n")
-                f.write(f"  Лимит: {data.get('used', 0)}/{data.get('limit', 0)}\n")
-                f.write(f"  Создан: {datetime.fromtimestamp(data.get('created', 0)).strftime('%Y-%m-%d %H:%M')}\n")
-                f.write(f"  Истекает: {datetime.fromtimestamp(data.get('expires', 0)).strftime('%Y-%m-%d %H:%M')}\n")
-                f.write(f"  Устройств: {len(data.get('devices', {}))}\n")
-                f.write("\n")
-        
-        self.stdscr.addstr(2, 2, f"📋 Полный список токенов сохранен в:")
-        self.stdscr.addstr(4, 4, report_file)
-        self.stdscr.addstr(6, 2, "Нажмите любую клавишу...")
-        self.stdscr.refresh()
-        self.stdscr.getch()
-    
-    def draw_progress(self, progress: float, status: str):
-        """Индикатор прогресса"""
-        self.stdscr.clear()
-        
-        title = " ПРОВЕРКА В ПРОЦЕССЕ "
-        self.stdscr.attron(curses.A_BOLD | curses.A_REVERSE)
-        self.stdscr.addstr(0, (self.width - len(title)) // 2, title)
-        self.stdscr.attroff(curses.A_BOLD | curses.A_REVERSE)
-        
-        # Прогресс-бар
-        bar_width = self.width - 20
-        bar_x = (self.width - bar_width) // 2
-        bar_y = self.height // 2 - 2
-        
-        filled = int(bar_width * progress)
-        bar = "█" * filled + "░" * (bar_width - filled)
-        
-        self.stdscr.addstr(bar_y, bar_x, f"[{bar}]")
-        self.stdscr.addstr(bar_y + 1, bar_x + bar_width // 2 - 5, f"{progress * 100:.1f}%")
-        
-        # Статус
-        self.stdscr.addstr(bar_y + 3, (self.width - len(status)) // 2, status)
-        
-        # Подсказка
-        hint = "Нажмите Ctrl+C для отмены"
-        self.stdscr.addstr(self.height - 2, (self.width - len(hint)) // 2, hint, curses.A_DIM)
-        
-        self.stdscr.refresh()
-    
-    def run_check(self, fast: bool = False):
-        """Запуск проверки с индикатором прогресса"""
-        try:
-            # Подготовка
-            for folder in [CFG.FOLDER_RU, CFG.FOLDER_EURO]:
-                if os.path.exists(folder): shutil.rmtree(folder)
-                os.makedirs(folder, exist_ok=True)
-            
-            # Загрузка источников
-            self.draw_progress(0.1, "Загрузка источников...")
-            tasks_ru = fetch_keys(URLS_RU, "RU")
-            tasks_my = fetch_keys(URLS_MY, "MY")
-            
-            # Дедупликация
-            unique = {get_hash(k.split("#")[0]): (k, t) for k, t in tasks_ru + tasks_my}
-            all_items = list(unique.values())
-            if len(all_items) > CFG.MAX_KEYS:
-                all_items = all_items[:CFG.MAX_KEYS]
-            
-            # Кэш
-            self.draw_progress(0.2, "Проверка кэша...")
-            current_time = time.time()
-            to_check = []
-            cache_hits = 0
-            results = {
-                'ru_white': [], 'ru_black': [], 'ru_universal': [],
-                'euro_white': [], 'euro_black': [], 'euro_universal': []
-            }
-            
-            history = load_json(CFG.HISTORY_FILE)
-            for key, tag in all_items:
-                key_id = get_hash(key.split("#")[0])
-                cached = history.get(key_id)
-                
-                if cached and (current_time - cached['time'] < CFG.CACHE_HOURS * 3600) and cached.get('alive'):
-                    restoration_progress = 0.2 + (0.3 * cache_hits / len(all_items))
-                    self.draw_progress(min(restoration_progress, 0.5), f"Восстановление из кэша: {cache_hits}/{len(all_items)}")
-                    
-                    metrics = KeyMetrics(latency=cached['latency'], last_check=cached['time'])
-                    routing_type = cached.get('routing_type', 'universal')
-                    country = cached.get('country', 'UNKNOWN')
-                    key_info = KeyInfo(key, key_id, tag, country, routing_type, metrics)
-                    label = format_label(key_info)
-                    final = f"{key.split('#')[0]}#{label}"
-                    
-                    category_prefix = 'euro' if tag == 'MY' else tag.lower()
-                    category = f"{category_prefix}_{routing_type}"
-                    
-                    if not (tag == "MY" and country == "RU"):
-                        results[category].append(final)
-                        cache_hits += 1
-                else:
-                    to_check.append((key, tag))
-            
-            # Проверка новых ключей
-            if to_check:
-                classifier = SmartClassifier()
-                checker = ConnectionChecker()
-                analytics = Analytics(CFG.ANALYTICS_FILE)
-                blacklist = BlacklistManager(CFG.BLACKLIST_FILE)
-                
-                checked = 0
-                with ThreadPoolExecutor(max_workers=CFG.THREADS) as executor:
-                    futures = {executor.submit(check_single_key, item, classifier, checker, analytics, blacklist): item 
-                              for item in to_check}
-                    
-                    for future in as_completed(futures):
-                        checked += 1
-                        progress = 0.5 + (checked / len(to_check)) * 0.5
-                        self.draw_progress(progress, f"Проверка: {checked}/{len(to_check)}")
-                        
-                        try:
-                            future.result(timeout=CFG.TIMEOUT + 3)
-                        except:
-                            pass
-            
-            # Сохранение
-            self.draw_progress(0.95, "Сохранение результатов...")
-            time.sleep(0.5)
-            
-            for cat in results:
-                results[cat].sort(key=extract_ping)
-            
-            save_chunked(results['ru_white'], CFG.FOLDER_RU, "ru_white")
-            save_chunked(results['ru_black'], CFG.FOLDER_RU, "ru_black")
-            save_chunked(results['ru_universal'], CFG.FOLDER_RU, "ru_universal")
-            save_chunked(results['euro_white'], CFG.FOLDER_EURO, "euro_white")
-            save_chunked(results['euro_black'], CFG.FOLDER_EURO, "euro_black")
-            save_chunked(results['euro_universal'], CFG.FOLDER_EURO, "euro_universal")
-            
-            # Подписки
-            GITHUB_REPO = "Mihuil121/vpn-checker-backend-fox"
-            BASE_RU = f"https://raw.githubusercontent.com/  {GITHUB_REPO}/main/{CFG.BASE_DIR}/RU_Best"
-            BASE_EU = f"https://raw.githubusercontent.com/  {GITHUB_REPO}/main/{CFG.BASE_DIR}/My_Euro"
-            
-            subs = ["=== 🇷🇺 РОССИЯ ===", ""]
-            for name, files in [("⚪ БЕЛЫЙ СПИСОК", results['ru_white']), 
-                               ("⚫ ЧЕРНЫЙ СПИСОК", results['ru_black']), 
-                               ("🔘 УНИВЕРСАЛЬНЫЕ", results['ru_universal'])]:
-                if files:
-                    subs.append(f"{name}:")
-                    base_name = "ru_" + name.split()[1].lower()
-                    subs.extend(f"{BASE_RU}/{base_name}.txt")
-                    subs.append("")
-            
-            subs.extend(["=== 🇪🇺 ЕВРОПА ===", ""])
-            for name, files in [("⚪ БЕЛЫЙ СПИСОК", results['euro_white']),
-                                ("⚫ ЧЕРНЫЙ СПИСОК", results['euro_black']),
-                                ("🔘 УНИВЕРСАЛЬНЫЕ", results['euro_universal'])]:
-                if files:
-                    subs.append(f"{name}:")
-                    base_name = "euro_" + name.split()[1].lower()
-                    subs.extend(f"{BASE_EU}/{base_name}.txt")
-                    subs.append("")
-            
-            os.makedirs(CFG.BASE_DIR, exist_ok=True)
-            with open(os.path.join(CFG.BASE_DIR, "subscriptions_list.txt"), "w", encoding="utf-8") as f:
-                f.write("\n".join(subs))
-            
-            self.draw_progress(1.0, "✅ Завершено!")
-            time.sleep(1)
-            
-        except KeyboardInterrupt:
-            raise
-        except Exception as e:
-            self.draw_progress(1.0, f"❌ Ошибка: {str(e)}")
-            time.sleep(2)
-            raise
     
     def run(self):
-        """Главный цикл TUI"""
-        curses.curs_set(0)  # Скрыть курсор
+        curses.curs_set(0)
         
-        # Инициализация цветов
         if curses.has_colors():
             curses.start_color()
             curses.use_default_colors()
-            curses.init_pair(1, curses.COLOR_CYAN, -1)
-            curses.init_pair(2, curses.COLOR_GREEN, -1)
-            curses.init_pair(3, curses.COLOR_YELLOW, -1)
-            curses.init_pair(4, curses.COLOR_RED, -1)
-        else:
-            try:
-                curses.use_default_colors()
-            except:
-                pass
         
-        while True:
-            self.draw_menu()
-            key = self.stdscr.getch()
-            
-            if key == curses.KEY_UP:
-                self.current_row = max(0, self.current_row - 1)
-            elif key == curses.KEY_DOWN:
-                self.current_row = min(len(self.menu_items) - 1, self.current_row + 1)
-            elif key == ord('\n') or key == curses.KEY_ENTER:
-                # Запуск действия
-                if self.current_row == 0:  # Быстрая проверка
-                    CFG.ENABLE_BANDWIDTH_TEST = False
-                    CFG.ENABLE_JITTER_TEST = False
-                    CFG.THREADS = self.settings['threads']
-                    CFG.MAX_KEYS = self.settings['max_keys']
-                    CFG.TIMEOUT = self.settings['timeout']
-                    self.run_check(fast=True)
-                    self.stdscr.getch()
-                elif self.current_row == 1:  # Полная проверка
-                    CFG.ENABLE_BANDWIDTH_TEST = self.settings['enable_bandwidth']
-                    CFG.ENABLE_JITTER_TEST = self.settings['enable_jitter']
-                    CFG.THREADS = self.settings['threads']
-                    CFG.MAX_KEYS = self.settings['max_keys']
-                    CFG.TIMEOUT = self.settings['timeout']
-                    CFG.MIN_QUALITY_SCORE = self.settings['min_quality']
-                    self.run_check()
-                    self.stdscr.getch()
-                elif self.current_row == 2:  # Настройки
-                    self.current_row = 0
-                    self.show_settings()
-                elif self.current_row == 3:  # Очистить кэш
-                    self.clear_cache()
-                elif self.current_row == 4:  # Статистика
-                    self.show_statistics()
-                elif self.current_row == 5:  # Управление токенами
-                    self.manage_tokens()
-                elif self.current_row == 6:  # Выход
+        try:
+            while True:
+                self.draw_menu()
+                key = self.stdscr.getch()
+                
+                if key == curses.KEY_UP:
+                    self.current_row = max(0, self.current_row - 1)
+                elif key == curses.KEY_DOWN:
+                    self.current_row = min(len(self.menu_items) - 1, self.current_row + 1)
+                elif key == ord('\n'):
+                    if self.current_row == 0:
+                        self.run_check(fast=True)
+                        self.stdscr.getch()
+                    elif self.current_row == 1:
+                        self.run_check()
+                        self.stdscr.getch()
+                    elif self.current_row == 2:
+                        self.current_row = 0
+                        self.show_settings()
+                    elif self.current_row == 3:
+                        self.clear_cache()
+                    elif self.current_row == 4:
+                        self.show_statistics()
+                    elif self.current_row == 5:
+                        break
+                elif key == ord('q'):
                     break
-            elif key == ord('q'):
-                break
+        finally:
+            self.cleanup()
 
-# ==================== ОСНОВНАЯ ЛОГИКА ====================
-def check_single_key(data: Tuple[str, str], 
-                    classifier: SmartClassifier,
-                    checker: ConnectionChecker,
-                    analytics: Analytics,
-                    blacklist: BlacklistManager) -> Optional[KeyInfo]:
-    """Проверить один ключ"""
-    key, tag = data
-    
-    # Парсинг
-    host, port, is_tls = parse_key(key)
-    if not host: return None
-    
-    # Blacklist
-    if blacklist.is_blacklisted(host): return None
-    
-    key_id = get_hash(key.split("#")[0])
-    
-    # Базовая проверка с retry
-    latency = None
-    for _ in range(CFG.RETRY_ATTEMPTS):
-        latency = checker.check_basic(host, port, is_tls)
-        if latency: break
-        time.sleep(0.1)
-    
-    if not latency:
-        analytics.record(key_id, False)
-        # Авто-blacklist при 5+ ошибках
-        checks = analytics.data.get(key_id, {}).get('checks', [])
-        if len(checks) >= 5 and sum(1 for c in checks[-5:] if not c['success']) >= 5:
-            blacklist.add(host, "Auto: 5 failures")
-        return None
-    
-    # Продвинутые метрики (по возможности)
-    metrics = KeyMetrics(
-        latency=latency,
-        last_check=time.time()
-    )
-    
-    if CFG.ENABLE_JITTER_TEST and latency < 200:
-        metrics.jitter = checker.check_jitter(host, port)
-    
-    if CFG.ENABLE_BANDWIDTH_TEST and latency < 300:
-        metrics.bandwidth = checker.check_bandwidth(host, port)
-    
-    # Uptime
-    metrics.uptime = analytics.get_uptime(key_id)
-    
-    # Классификация
-    routing_type = classifier.predict(key)
-    country = get_country(key, host)
-    
-    # Создать KeyInfo
-    key_info = KeyInfo(
-        key=key,
-        key_id=key_id,
-        tag=tag,
-        country=country,
-        routing_type=routing_type,
-        metrics=metrics
-    )
-    
-    # Фильтр по качеству
-    if key_info.quality_score() < CFG.MIN_QUALITY_SCORE:
-        blacklist.add(host, f"Low quality: {key_info.quality_score():.1f}")
-        analytics.record(key_id, False)
-        return None
-    
-    analytics.record(key_id, True, latency)
-    return key_info
-
+# ==================== CLI ====================
 def run_cli(args):
-    """Запуск из командной строки"""
     try:
-        main_logic(args)
+        local_config = {
+            'THREADS': args.threads,
+            'MAX_KEYS': args.max_keys,
+            'TIMEOUT': args.timeout or CFG.TIMEOUT,
+            'ENABLE_BANDWIDTH_TEST': args.bandwidth,
+            'ENABLE_JITTER_TEST': args.jitter,
+            'MIN_QUALITY_SCORE': args.min_quality
+        }
+        
+        print(f"\n{'='*70}")
+        print(f"VPN Checker v15.2 CLI | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"Threads: {local_config['THREADS']} | Timeout: {local_config['TIMEOUT']}s | Max keys: {local_config['MAX_KEYS']}")
+        print(f"Advanced: bandwidth={local_config['ENABLE_BANDWIDTH_TEST']}, jitter={local_config['ENABLE_JITTER_TEST']}")
+        print(f"{'='*70}\n")
+        
+        for folder in [CFG.FOLDER_RU, CFG.FOLDER_EURO]:
+            if os.path.exists(folder): shutil.rmtree(folder)
+            os.makedirs(folder, exist_ok=True)
+        
+        classifier = SmartClassifier()
+        checker = ConnectionChecker()
+        analytics = Analytics(CFG.ANALYTICS_FILE)
+        blacklist = BlacklistManager(CFG.BLACKLIST_FILE)
+        
+        print("ЗАГРУЗКА ИСТОЧНИКОВ")
+        print("="*70)
+        tasks_ru = fetch_keys(URLS_RU, "RU")
+        tasks_my = fetch_keys(URLS_MY, "MY")
+        
+        unique = {get_hash(k.split("#")[0]): (k, t) for k, t in tasks_ru + tasks_my}
+        all_items = list(unique.values())[:local_config['MAX_KEYS']]
+        print(f"\nУникальных: {len(all_items)}")
+        
+        print("\nПРОВЕРКА КЭША")
+        print("="*70)
+        current_time = time.time()
+        to_check = []
+        results = {
+            "ru_white": [], "ru_black": [], "ru_universal": [],
+            "euro_white": [], "euro_black": [], "euro_universal": []
+        }
+        cache_hits = 0
+        
+        history = load_json(CFG.HISTORY_FILE)
+        for key, tag in all_items:
+            key_id = get_hash(key.split("#")[0])
+            cached = history.get(key_id)
+            
+            if cached and (current_time - cached['time'] < CFG.CACHE_HOURS * 3600) and cached.get('alive'):
+                metrics = KeyMetrics(latency=cached['latency'], last_check=cached['time'])
+                routing_type = cached.get('routing_type', 'universal')
+                country = cached.get('country', 'UNKNOWN')
+                key_info = KeyInfo(key, key_id, tag, country, routing_type, metrics)
+                label = format_label(key_info)
+                final = f"{key.split('#')[0]}#{label}"
+                category = f"{'euro' if tag == 'MY' else tag.lower()}_{routing_type}"
+                
+                if not (tag == "MY" and country == "RU"):
+                    results[category].append(final)
+                    cache_hits += 1
+            else:
+                to_check.append((key, tag))
+        
+        print(f"Из кэша: {cache_hits} | Для проверки: {len(to_check)}")
+        
+        if to_check:
+            print("\nПРОВЕРКА В РЕАЛЬНОМ ВРЕМЕНИ")
+            print("="*70)
+            
+            checked = 0
+            failed = 0
+            stats = defaultdict(lambda: defaultdict(int))
+            
+            with ThreadPoolExecutor(max_workers=local_config['THREADS']) as executor:
+                futures = {executor.submit(_check_key_cli, item, local_config): item 
+                          for item in to_check}
+                
+                for future in as_completed(futures):
+                    checked += 1
+                    try:
+                        result = future.result(timeout=local_config['TIMEOUT'] + 3)
+                        if result:
+                            category, final, key_id = result
+                            results[category].append(final)
+                            key, tag = futures[future]
+                            stats[tag][category.split('_')[1]] += 1
+                        else:
+                            failed += 1
+                    except:
+                        failed += 1
+                    
+                    if checked % 50 == 0:
+                        print(f"  {checked}/{len(to_check)} | "
+                              f"RU: W:{stats['RU']['white']} B:{stats['RU']['black']} U:{stats['RU']['universal']} | "
+                              f"EU: W:{stats['MY']['white']} B:{stats['MY']['black']} U:{stats['MY']['universal']} | "
+                              f"❌ {failed}")
+            
+            print(f"\nПроверено: {checked}, нерабочих: {failed}")
+        
+        cutoff = time.time() - (86400 * 3)
+        history_cleaned = {k: v for k, v in history.items() if v['time'] > cutoff}
+        save_json(CFG.HISTORY_FILE, history_cleaned)
+        blacklist.save()
+        analytics.save()
+        
+        print(f"\nОчищено истории: {len(history)} → {len(history_cleaned)}")
+        
+        print("\nСОХРАНЕНИЕ")
+        print("="*70)
+        
+        for cat in results:
+            results[cat].sort(key=extract_ping)
+        
+        print(f"\nРОССИЯ:")
+        for rt in ['white', 'black', 'universal']:
+            print(f"  {rt}: {len(results[f'ru_{rt}'])}")
+        
+        print(f"\nЕВРОПА:")
+        for rt in ['white', 'black', 'universal']:
+            print(f"  {rt}: {len(results[f'euro_{rt}'])}")
+        
+        print(f"\nФайлы:")
+        ru_white_files = save_chunked(results['ru_white'], CFG.FOLDER_RU, "ru_white")
+        ru_black_files = save_chunked(results['ru_black'], CFG.FOLDER_RU, "ru_black")
+        ru_uni_files = save_chunked(results['ru_universal'], CFG.FOLDER_RU, "ru_universal")
+        euro_white_files = save_chunked(results['euro_white'], CFG.FOLDER_EURO, "euro_white")
+        euro_black_files = save_chunked(results['euro_black'], CFG.FOLDER_EURO, "euro_black")
+        euro_uni_files = save_chunked(results['euro_universal'], CFG.FOLDER_EURO, "euro_universal")
+        
+        _generate_subscriptions_list([
+            (ru_white_files, ru_black_files, ru_uni_files),
+            (euro_white_files, euro_black_files, euro_uni_files)
+        ])
+        
+        print(f"\n{'='*70}")
+        print("SUCCESS!")
+        print(f"{'='*70}")
+        print(f"Время: {int(time.time() - analytics.session['start'])} сек")
+        print(f"Сессия: {analytics.session['success']}/{analytics.session['total']} успешных")
+        print(f"\nПодписки: {CFG.BASE_DIR}/subscriptions_list.txt")
+        
     except KeyboardInterrupt:
-        print("\n\n❌ Прервано пользователем")
+        print("\n\nПрервано пользователем")
         exit(1)
     except Exception as e:
-        print(f"\n\n❌ Критическая ошибка: {e}")
+        print(f"\n\nКритическая ошибка: {e}")
         import traceback
         traceback.print_exc()
         exit(1)
 
-def main_logic(args):
-    """Основная логика без TUI"""
-    if args.fast:
-        CFG.ENABLE_BANDWIDTH_TEST = False
-        CFG.ENABLE_JITTER_TEST = False
-        print("⚡ Быстрый режим: продвинутые проверки отключены")
+def _check_key_cli(data, config):
+    key, tag = data
     
-    CFG.THREADS = args.threads
-    CFG.MAX_KEYS = args.max_keys
-    
-    # Заголовок
-    print(f"\n{'='*70}")
-    print(f"VPN Checker v15.0 | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"Threads: {CFG.THREADS} | Timeout: {CFG.TIMEOUT}s | Max keys: {CFG.MAX_KEYS}")
-    if CFG.ENABLE_BANDWIDTH_TEST or CFG.ENABLE_JITTER_TEST:
-        print(f"Advanced checks: bandwidth={CFG.ENABLE_BANDWIDTH_TEST}, jitter={CFG.ENABLE_JITTER_TEST}")
-    print(f"{'='*70}\n")
-    
-    # Очистка
-    for folder in [CFG.FOLDER_RU, CFG.FOLDER_EURO]:
-        if os.path.exists(folder): shutil.rmtree(folder)
-        os.makedirs(folder, exist_ok=True)
-    
-    # Инициализация компонентов
-    classifier = SmartClassifier()
-    checker = ConnectionChecker()
-    analytics = Analytics(CFG.ANALYTICS_FILE)
-    blacklist = BlacklistManager(CFG.BLACKLIST_FILE)
-    
-    # История
-    history = load_json(CFG.HISTORY_FILE)
-    print(f"📂 История: {len(history)} записей")
-    
-    # Загрузка
-    print(f"\n{'='*70}")
-    print("ЗАГРУЗКА ИСТОЧНИКОВ")
-    print(f"{'='*70}")
-    tasks_ru = fetch_keys(URLS_RU, "RU")
-    tasks_my = fetch_keys(URLS_MY, "MY")
-    
-    # Удаление дубликатов
-    unique = {get_hash(k.split("#")[0]): (k, t) for k, t in tasks_ru + tasks_my}
-    all_items = list(unique.values())
-    print(f"\n📊 Уникальных ключей: {len(all_items)}")
-    
-    if len(all_items) > CFG.MAX_KEYS:
-        all_items = all_items[:CFG.MAX_KEYS]
-        print(f"⚠️  Ограничено до {CFG.MAX_KEYS}")
-    
-    # Кэш
-    current_time = time.time()
-    to_check = []
-    results = {
-        'ru_white': [], 'ru_black': [], 'ru_universal': [],
-        'euro_white': [], 'euro_black': [], 'euro_universal': []
-    }
-    cache_hits = 0
-    
-    print(f"\n{'='*70}")
-    print("ПРОВЕРКА КЭША")
-    print(f"{'='*70}")
-    
-    for key, tag in all_items:
+    try:
+        host, port, is_tls = parse_key(key)
+        if not host: return None
+        
+        # Используем глобальный экземпляр blacklist или создаём один раз
+        # blacklist = BlacklistManager(CFG.BLACKLIST_FILE)
+        # if blacklist.is_blacklisted(host): return None
+        
         key_id = get_hash(key.split("#")[0])
-        cached = history.get(key_id)
         
-        if cached and (current_time - cached['time'] < CFG.CACHE_HOURS * 3600) and cached.get('alive'):
-            # Восстановить из кэша
-            metrics = KeyMetrics(
-                latency=cached['latency'],
-                last_check=cached['time']
-            )
-            routing_type = cached.get('routing_type', 'universal')
-            country = cached.get('country', 'UNKNOWN')
-            
-            key_info = KeyInfo(key, key_id, tag, country, routing_type, metrics)
-            label = format_label(key_info)
-            final = f"{key.split('#')[0]}#{label}"
-            
-            # ИСПРАВЛЕНИЕ: Используем 'euro' для тега 'MY'
-            category_prefix = 'euro' if tag == 'MY' else tag.lower()
-            category = f"{category_prefix}_{routing_type}"
-            
-            if tag == "MY" and country == "RU":
-                pass  # Пропускаем RU из MY
-            else:
-                results[category].append(final)
-                cache_hits += 1
-        else:
-            to_check.append((key, tag))
-    
-    print(f"✅ Из кэша: {cache_hits} | 🔍 Для проверки: {len(to_check)}")
-    
-    # Проверка новых
-    if to_check:
-        print(f"\n{'='*70}")
-        print("ПРОВЕРКА В РЕАЛЬНОМ ВРЕМЕНИ")
-        print(f"{'='*70}")
+        latency = None
+        checker = ConnectionChecker()
+        for attempt in range(CFG.RETRY_ATTEMPTS):
+            latency = checker.check_basic(host, port, is_tls)
+            if latency: break
+            time.sleep(0.1 * (attempt + 1))
         
-        checked = 0
-        failed = 0
-        stats = defaultdict(lambda: defaultdict(int))
+        if not latency: return None
         
-        with ThreadPoolExecutor(max_workers=CFG.THREADS) as executor:
-            futures = {executor.submit(check_single_key,
-                                      item, classifier, checker, analytics, blacklist): item 
-                      for item in to_check}
-            
-            for future in as_completed(futures):
-                key, tag = futures[future]
-                checked += 1
-                
-                try:
-                    key_info = future.result(timeout=CFG.TIMEOUT + 3)
-                    if not key_info:
-                        failed += 1
-                        continue
-                    
-                    # Сохранить в историю
-                    history[key_info.key_id] = {
-                        'alive': True,
-                        'latency': key_info.metrics.latency,
-                        'time': current_time,
-                        'country': key_info.country,
-                        'routing_type': key_info.routing_type
-                    }
-                    
-                    # Форматировать
-                    label = format_label(key_info)
-                    final = f"{key_info.key.split('#')[0]}#{label}"
-                    
-                    # ИСПРАВЛЕНИЕ: Используем 'euro' для тега 'MY'
-                    category_prefix = 'euro' if tag == 'MY' else tag.lower()
-                    category = f"{category_prefix}_{key_info.routing_type}"
-                    
-                    if tag == "MY" and key_info.country == "RU":
-                        pass
-                    else:
-                        results[category].append(final)
-                        stats[tag][key_info.routing_type] += 1
-                    
-                except Exception:
-                    failed += 1
-                
-                if checked % 50 == 0:
-                    print(f"  📊 {checked}/{len(to_check)} | "
-                          f"RU: W:{stats['RU']['white']} B:{stats['RU']['black']} U:{stats['RU']['universal']} | "
-                          f"EU: W:{stats['MY']['white']} B:{stats['MY']['black']} U:{stats['MY']['universal']} | "
-                          f"❌ {failed}")
+        metrics = KeyMetrics(latency=latency, last_check=time.time())
+        if config.get('ENABLE_JITTER_TEST') and latency < 200:
+            metrics.jitter = checker.check_jitter(host, port, is_tls)
+        if config.get('ENABLE_BANDWIDTH_TEST') and latency < 300:
+            metrics.bandwidth = checker.check_bandwidth(host, port, is_tls)
         
-        print(f"\n✅ Итого проверено: {checked}, нерабочих: {failed}")
+        classifier = SmartClassifier()
+        routing_type = classifier.predict(key)
+        country = get_country(key, host)
+        
+        key_info = KeyInfo(key, key_id, tag, country, routing_type, metrics)
+        
+        # Временно понижаем порог или делаем его опциональным
+        min_quality = config.get('MIN_QUALITY_SCORE', 0.0)
+        if key_info.quality_score() < min_quality:
+            return None
+        
+        label = format_label(key_info)
+        final = f"{key.split('#')[0]}#{label}"
+        category = f"{'euro' if tag == 'MY' else tag.lower()}_{routing_type}"
+        
+        history = load_json(CFG.HISTORY_FILE)
+        history[key_id] = {
+            'alive': True,
+            'latency': latency,
+            'time': time.time(),
+            'country': country,
+            'routing_type': routing_type
+        }
+        save_json(CFG.HISTORY_FILE, history)
+        
+        return category, final, key_id
+    except Exception as e:
+        # Временно игнорируем ошибки для отладки
+        return None
+
+def _generate_subscriptions_list(files_data):
+    ru_files, euro_files = files_data
     
-    # Очистить старую историю
-    history_cleaned = {k: v for k, v in history.items() if current_time - v['time'] < 86400 * 3}
-    save_json(CFG.HISTORY_FILE, history_cleaned)
-    blacklist.save()
-    analytics.save()
-    
-    print(f"🧹 Очищено истории: {len(history)} → {len(history_cleaned)}")
-    
-    # Сортировка и сохранение
-    print(f"\n{'='*70}")
-    print("СОРТИРОВКА И СОХРАНЕНИЕ")
-    print(f"{'='*70}")
-    
-    for cat in results:
-        results[cat].sort(key=extract_ping)
-    
-    print(f"\n🇷🇺 РОССИЯ:")
-    print(f"  ⚪ Белый список: {len(results['ru_white'])}")
-    print(f"  ⚫ Черный список: {len(results['ru_black'])}")
-    print(f"  🔘 Универсальные: {len(results['ru_universal'])}")
-    
-    print(f"\n🇪🇺 ЕВРОПА:")
-    print(f"  ⚪ Белый список: {len(results['euro_white'])}")
-    print(f"  ⚫ Черный список: {len(results['euro_black'])}")
-    print(f"  🔘 Универсальные: {len(results['euro_universal'])}")
-    
-    # Сохранение
-    print(f"\n📁 Сохранение файлов:")
-    ru_white_files = save_chunked(results['ru_white'], CFG.FOLDER_RU, "ru_white")
-    ru_black_files = save_chunked(results['ru_black'], CFG.FOLDER_RU, "ru_black")
-    ru_uni_files = save_chunked(results['ru_universal'], CFG.FOLDER_RU, "ru_universal")
-    euro_white_files = save_chunked(results['euro_white'], CFG.FOLDER_EURO, "euro_white")
-    euro_black_files = save_chunked(results['euro_black'], CFG.FOLDER_EURO, "euro_black")
-    euro_uni_files = save_chunked(results['euro_universal'], CFG.FOLDER_EURO, "euro_universal")
-    
-    # Подписки
     GITHUB_REPO = "Mihuil121/vpn-checker-backend-fox"
-    BASE_RU = f"https://raw.githubusercontent.com/  {GITHUB_REPO}/main/{CFG.BASE_DIR}/RU_Best"
-    BASE_EU = f"https://raw.githubusercontent.com/  {GITHUB_REPO}/main/{CFG.BASE_DIR}/My_Euro"
+    BASE_RU = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/{CFG.BASE_DIR}/RU_Best"
+    BASE_EU = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/{CFG.BASE_DIR}/My_Euro"
     
     subs = ["=== 🇷🇺 РОССИЯ ===", ""]
-    
-    for name, files in [("⚪ БЕЛЫЙ СПИСОК", ru_white_files), 
-                        ("⚫ ЧЕРНЫЙ СПИСОК", ru_black_files), 
-                        ("🔘 УНИВЕРСАЛЬНЫЕ", ru_uni_files)]:
+    for name, files in [("⚪ БЕЛЫЙ СПИСОК", ru_files[0]),
+                       ("⚫ ЧЕРНЫЙ СПИСОК", ru_files[1]),
+                       ("🔘 УНИВЕРСАЛЬНЫЕ", ru_files[2])]:
         if files:
             subs.append(f"{name}:")
             subs.extend(f"{BASE_RU}/{f}" for f in files)
             subs.append("")
     
     subs.extend(["=== 🇪🇺 ЕВРОПА ===", ""])
-    
-    for name, files in [("⚪ БЕЛЫЙ СПИСОК", euro_white_files),
-                        ("⚫ ЧЕРНЫЙ СПИСОК", euro_black_files),
-                        ("🔘 УНИВЕРСАЛЬНЫЕ", euro_uni_files)]:
+    for name, files in [("⚪ БЕЛЫЙ СПИСОК", euro_files[0]),
+                       ("⚫ ЧЕРНЫЙ СПИСОК", euro_files[1]),
+                       ("🔘 УНИВЕРСАЛЬНЫЕ", euro_files[2])]:
         if files:
             subs.append(f"{name}:")
             subs.extend(f"{BASE_EU}/{f}" for f in files)
@@ -1430,79 +1268,31 @@ def main_logic(args):
     os.makedirs(CFG.BASE_DIR, exist_ok=True)
     with open(os.path.join(CFG.BASE_DIR, "subscriptions_list.txt"), "w", encoding="utf-8") as f:
         f.write("\n".join(subs))
-    
-    # Итог
-    print(f"\n{'='*70}")
-    print("✅ SUCCESS!")
-    print(f"{'='*70}")
-    print(f"🕒 Завершено: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"⏱️  Время: {int(time.time() - analytics.session['start'])} сек")
-    print(f"📊 Сессия: {analytics.session['success']}/{analytics.session['total']} успешных")
-    print("\n💡 Типы списков:")
-    print("  ⚪ Белый - трафик идёт напрямую в РФ, VPN только для блокировок")
-    print("  ⚫ Черный - весь трафик через VPN")
-    print("  🔘 Универсальный - неопределён, проверьте вручную")
-    print(f"\n📋 Подписки сохранены в: {CFG.BASE_DIR}/subscriptions_list.txt")
-
-def generate_user_link(token: str, filename: str = "ru_white.txt") -> str:
-    """Сгенерировать ссылку с токеном для пользователя"""
-    return f"https://raw.githubusercontent.com/YOUR_USER/YOUR_REPO/main/{CFG.BASE_DIR}/{filename}?token={token}"
 
 # ==================== ЗАПУСК ====================
-if __name__ == "__main__":
-    # Проверяем, есть ли аргументы командной строки
-    parser = argparse.ArgumentParser(description="VPN Checker v15.1")
-    parser.add_argument("--fast", action="store_true", help="Только быстрая проверка (без метрик)")
+def main():
+    parser = argparse.ArgumentParser(description="VPN Checker v15.2 - GitHub Edition")
+    parser.add_argument("--cli", action="store_true", help="CLI режим")
+    parser.add_argument("--fast", action="store_true", help="Быстрая проверка")
     parser.add_argument("--threads", type=int, default=50, help="Количество потоков")
     parser.add_argument("--max-keys", type=int, default=15000, help="Максимум ключей")
-    parser.add_argument("--cli", action="store_true", help="Запустить в CLI режиме (без TUI)")
-    parser.add_argument("--gen-token", type=str, help="Сгенерировать токен для пользователя (имя)")
-    parser.add_argument("--revoke-token", type=str, help="Отозвать токен")
-    parser.add_argument("--list-tokens", action="store_true", help="Показать все токены")
+    parser.add_argument("--timeout", type=int, help="Таймаут")
+    parser.add_argument("--bandwidth", action="store_true", help="Тест пропускной способности")
+    parser.add_argument("--jitter", action="store_true", help="Тест jitter")
+    parser.add_argument("--min-quality", type=float, default=0.0, help="Минимальное качество")
+    
     args = parser.parse_args()
     
-    # Обработка команд токенов
-    if args.gen_token:
-        token_manager = TokenManager(CFG.TOKENS_FILE)
-        token = token_manager.generate_token(args.gen_token, tier="pro", limit=50000, days=30)
-        print(f"✅ Токен для {args.gen_token}:")
-        print(token)
-        print(f"Ссылка: https://YOUR_LINK?token={token}")
-        exit(0)
-    
-    if args.revoke_token:
-        token_manager = TokenManager(CFG.TOKENS_FILE)
-        token_manager.revoke_token(args.revoke_token)
-        print("✅ Токен отозван")
-        exit(0)
-    
-    if args.list_tokens:
-        token_manager = TokenManager(CFG.TOKENS_FILE)
-        tokens = token_manager.list_tokens()
-        print("=== СПИСОК ТОКЕНОВ ===")
-        for token, data in tokens.items():
-            print(f"Токен: {token}")
-            print(f"  Пользователь: {data.get('username')}")
-            print(f"  Использовано: {data.get('used', 0)}/{data.get('limit', 0)}")
-            print(f"  Истекает: {datetime.fromtimestamp(data.get('expires', 0))}")
-            print()
-        exit(0)
-    
     if args.cli:
-        # Запуск в CLI режиме
         run_cli(args)
     else:
-        # Запуск TUI
         try:
             stdscr = curses.initscr()
             curses.noecho()
             curses.cbreak()
             stdscr.keypad(True)
             
-            tui = TUI(stdscr)
-            tui.run()
-            
-            tui.cleanup()
+            TUI(stdscr).run()
         except Exception as e:
             try:
                 curses.endwin()
@@ -1512,3 +1302,6 @@ if __name__ == "__main__":
             import traceback
             traceback.print_exc()
             exit(1)
+
+if __name__ == "__main__":
+    main()
