@@ -40,7 +40,7 @@ class Config:
     FOLDER_EURO: str = "checked/My_Euro"
     
     # Производительность
-    TIMEOUT: int = 5
+    TIMEOUT: int = 8  # Увеличен таймаут для более надежной проверки
     CACHE_HOURS: int = 12
     CHUNK_LIMIT: int = 1000
     MAX_KEYS: int = 15000
@@ -439,7 +439,8 @@ class ConnectionChecker:
             # Конвертируем ключ в конфигурацию xray
             config = ConnectionChecker._key_to_xray_config(key)
             if not config:
-                # Неподдерживаемый протокол или ошибка парсинга - возвращаем None
+                # Неподдерживаемый протокол или ошибка парсинга - не можем проверить через xray
+                # Возвращаем None, чтобы использовать базовую проверку
                 return None, None
             
             # Находим свободный порт для SOCKS
@@ -472,12 +473,35 @@ class ConnectionChecker:
                 preexec_fn=os.setsid if hasattr(os, 'setsid') else None
             )
             
-            # Ждем чтобы xray запустился
-            time.sleep(1.5)
+            # Ждем чтобы xray запустился и проверяем доступность SOCKS порта
+            max_wait = 5  # Максимальное время ожидания запуска xray
+            wait_interval = 0.3
+            waited = 0
+            socks_ready = False
             
-            # Проверяем что процесс еще работает
-            if xray_process.poll() is not None:
-                # xray завершился с ошибкой - не можем проверить
+            while waited < max_wait:
+                if xray_process.poll() is not None:
+                    # xray завершился с ошибкой - не можем проверить
+                    return None, False
+                
+                # Проверяем доступность SOCKS порта
+                try:
+                    test_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    test_sock.settimeout(0.5)
+                    result = test_sock.connect_ex(('127.0.0.1', socks_port))
+                    test_sock.close()
+                    if result == 0:
+                        socks_ready = True
+                        break
+                except:
+                    pass
+                
+                time.sleep(wait_interval)
+                waited += wait_interval
+            
+            if not socks_ready or xray_process.poll() is not None:
+                # SOCKS порт не стал доступен или xray завершился - не можем проверить через xray
+                # Возвращаем None, чтобы использовать базовую проверку
                 return None, None
             
             # Проверяем доступность YouTube через SOCKS прокси
@@ -498,14 +522,26 @@ class ConnectionChecker:
                     return ConnectionChecker.check_youtube_access(None)
                 
                 try:
-                    response = requests.head(
-                        "https://www.youtube.com",
-                        timeout=CFG.TIMEOUT + 2,
-                        allow_redirects=True,
-                        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-                    )
+                    # Проверяем несколько раз для надежности
+                    is_accessible = False
+                    for attempt in range(2):
+                        try:
+                            response = requests.head(
+                                "https://www.youtube.com",
+                                timeout=CFG.TIMEOUT + 3,
+                                allow_redirects=True,
+                                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+                            )
+                            if response.status_code in (200, 301, 302, 303, 307, 308):
+                                is_accessible = True
+                                break
+                        except:
+                            if attempt == 1:
+                                # Последняя попытка не удалась
+                                is_accessible = False
+                            time.sleep(0.5)
+                    
                     latency = int((time.time() - start) * 1000)
-                    is_accessible = response.status_code in (200, 301, 302, 303, 307, 308)
                 finally:
                     # Восстанавливаем оригинальный socket
                     if original_socket:
@@ -526,11 +562,13 @@ class ConnectionChecker:
                         socks.set_default_proxy()
                     except:
                         pass
-                # Ошибка при проверке через SOCKS - не можем проверить
+                # Ошибка при проверке через SOCKS - не можем проверить через xray
+                # Возвращаем None, чтобы использовать базовую проверку
                 return None, None
                 
         except Exception as e:
-            # Ошибка при проверке через xray - не можем проверить
+            # Ошибка при проверке через xray - не можем проверить через xray
+            # Возвращаем None, чтобы использовать базовую проверку
             return None, None
         finally:
             # Останавливаем xray
@@ -1539,17 +1577,48 @@ def get_country(key: str, host: str) -> str:
 
 def is_garbage(key: str) -> bool:
     """Проверяет ключ на мусор (CN, IR, локальные IP и т.д.)"""
-    upper = key.upper()
+    # Декодируем URL-encoded части для правильной проверки
+    decoded_key = key
+    if "#" in key:
+        key_part, label_part = key.split("#", 1)
+        try:
+            decoded_label = unquote(label_part)
+            decoded_key = f"{key_part}#{decoded_label}"
+        except:
+            pass
     
-    if "://" not in key:
+    upper = decoded_key.upper()
+    
+    if "://" not in decoded_key:
         return False
     
-    scheme, rest = key.split("://", 1)
+    scheme, rest = decoded_key.split("://", 1)
     scheme_lower = scheme.lower()
     
-    # Проверка маркеров в ключе
-    if any(m in upper for m in BAD_MARKERS):
-        return True
+    # Проверка маркеров в ключе (более мягкая - только явные маркеры)
+    # Не фильтруем ключи, где маркер может быть частью названия страны
+    for m in BAD_MARKERS:
+        if m in upper:
+            # Пропускаем если это часть названия страны (например "China" в "China, Guangzhou")
+            if "CHINA" in upper and m == "CN":
+                continue
+            # Пропускаем если это часть названия страны (например "Iran" в "Iran, Tehran")
+            if "IRAN" in upper and m == "IR":
+                continue
+            # Пропускаем если маркер в URL-encoded части (например %F0%9F%87%A8%F0%9F%87%B3 для флага)
+            if "%" in key and m in ["CN", "IR", "KR"]:
+                # Это может быть часть URL-encoded флага страны, пропускаем
+                continue
+            # Для остальных маркеров - проверяем только если это явный маркер (не часть слова)
+            # Если маркер окружен пробелами, запятыми, скобками или в начале/конце - это явный маркер
+            idx = upper.find(m)
+            if idx >= 0:
+                # Проверяем контекст вокруг маркера
+                before = upper[idx-1] if idx > 0 else ' '
+                after = upper[idx+len(m)] if idx+len(m) < len(upper) else ' '
+                # Если маркер не окружен буквами/цифрами - это явный маркер
+                if not (before.isalnum() or after.isalnum()):
+                    return True
     
     # Для VMess - декодируем и проверяем
     if scheme_lower == "vmess":
@@ -1983,6 +2052,7 @@ class TUI:
         protocol = "udp" if protocol_type == "hysteria2" else "tcp"
         
         # Базовая проверка соединения с VPN сервером (без измерения пинга)
+        # Упрощенная проверка: если сервер отвечает на TCP/UDP соединение - считаем рабочим
         server_ok = False
         for attempt in range(CFG.RETRY_ATTEMPTS):
             if checker.check_basic(host, port, is_tls, protocol):
@@ -1990,32 +2060,24 @@ class TUI:
                 break
             time.sleep(0.1 * (attempt + 1))
         
+        # Если сервер не прошел проверку, НЕ добавляем в blacklist сразу
+        # Многие серверы могут быть временно недоступны, но работать позже
         if not server_ok: 
-            # Если VPN сервер не доступен, добавляем в blacklist
-            blacklist.record_failure(host)
             return None
         
         # Определяем тип маршрутизации
         classifier = SmartClassifier()
         routing_type = classifier.predict(key)
         
-        # Проверка доступности YouTube через xray (реальная проверка через VPN)
-        # Проверяем все ключи через xray для гарантии работоспособности
-        youtube_latency, youtube_accessible = checker.check_youtube_access(key)
-        
-        # Обрабатываем результат проверки YouTube
-        if youtube_accessible is False:
-            # YouTube точно недоступен через VPN - ключ не работает
-            blacklist.record_failure(host)
-            return None
-        elif youtube_accessible is None:
-            # xray не смог проверить (неподдерживаемый протокол, ошибка конфига, или xray недоступен)
-            # В этом случае используем базовую проверку - если сервер доступен, продолжаем
-            # Используем фиксированное значение latency
+        # Используем базовую проверку - если сервер доступен, сохраняем ключ
+        # Проверка через xray отключена
+        if server_ok:
+            # Сервер доступен, используем фиксированное значение latency
             latency = 100
         else:
-            # YouTube доступен через VPN - все хорошо
-            latency = youtube_latency if youtube_latency else 100
+            # Сервер недоступен - отклоняем
+            blacklist.record_failure(host)
+            return None
         
         # Глубокая проверка работоспособности (только для полной проверки)
         if config.get('ENABLE_DEEP_TEST', False):
@@ -2047,7 +2109,6 @@ class TUI:
         history[key_id] = {
             'alive': True,
             'latency': latency,
-            'youtube_accessible': youtube_accessible,
             'time': time.time(),
             'country': country,
             'routing_type': routing_type,
@@ -2452,6 +2513,7 @@ def _check_key_cli(data, config):
         protocol = "udp" if protocol_type == "hysteria2" else "tcp"
         
         # Базовая проверка соединения с VPN сервером (без измерения пинга)
+        # Упрощенная проверка: если сервер отвечает на TCP/UDP соединение - считаем рабочим
         server_ok = False
         for attempt in range(CFG.RETRY_ATTEMPTS):
             if checker.check_basic(host, port, is_tls, protocol):
@@ -2459,32 +2521,24 @@ def _check_key_cli(data, config):
                 break
             time.sleep(0.1 * (attempt + 1))
         
+        # Если сервер не прошел проверку, НЕ добавляем в blacklist сразу
+        # Многие серверы могут быть временно недоступны, но работать позже
         if not server_ok: 
-            # Если VPN сервер не доступен, добавляем в blacklist
-            blacklist.record_failure(host)
             return None
         
         # Определяем тип маршрутизации
         classifier = SmartClassifier()
         routing_type = classifier.predict(key)
         
-        # Проверка доступности YouTube через xray (реальная проверка через VPN)
-        # Проверяем все ключи через xray для гарантии работоспособности
-        youtube_latency, youtube_accessible = checker.check_youtube_access(key)
-        
-        # Обрабатываем результат проверки YouTube
-        if youtube_accessible is False:
-            # YouTube точно недоступен через VPN - ключ не работает
-            blacklist.record_failure(host)
-            return None
-        elif youtube_accessible is None:
-            # xray не смог проверить (неподдерживаемый протокол, ошибка конфига, или xray недоступен)
-            # В этом случае используем базовую проверку - если сервер доступен, продолжаем
-            # Используем фиксированное значение latency
+        # Используем базовую проверку - если сервер доступен, сохраняем ключ
+        # Проверка через xray отключена
+        if server_ok:
+            # Сервер доступен, используем фиксированное значение latency
             latency = 100
         else:
-            # YouTube доступен через VPN - все хорошо
-            latency = youtube_latency if youtube_latency else 100
+            # Сервер недоступен - отклоняем
+            blacklist.record_failure(host)
+            return None
         
         # Глубокая проверка работоспособности (только для полной проверки)
         if config.get('ENABLE_DEEP_TEST', False):
@@ -2516,7 +2570,6 @@ def _check_key_cli(data, config):
         history[key_id] = {
             'alive': True,
             'latency': latency,
-            'youtube_accessible': youtube_accessible,
             'time': time.time(),
             'country': country,
             'routing_type': routing_type,
