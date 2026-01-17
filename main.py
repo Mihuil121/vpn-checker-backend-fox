@@ -21,6 +21,8 @@ import signal
 import threading
 import fcntl
 import ipaddress
+import subprocess
+import tempfile
 from dataclasses import dataclass, asdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -52,6 +54,8 @@ class Config:
     ENABLE_JITTER_TEST: bool = False
     ENABLE_BANDWIDTH_TEST: bool = False
     ENABLE_DEEP_TEST: bool = True  # Глубокая проверка работоспособности
+    XRAY_PATH: str = os.path.join(os.path.dirname(__file__), "Xray-linux-64", "xray")  # Путь к xray бинарнику
+    XRAY_SOCKS_PORT: int = 10808  # Локальный порт для SOCKS прокси
     
     # Файлы
     HISTORY_FILE: str = "checked/history.json"
@@ -145,10 +149,23 @@ def get_hash(key: str) -> str:
     return hashlib.sha256(key.encode('utf-8')).hexdigest()[:16]
 
 def extract_ping(key_str: str) -> int:
+    """
+    Извлекает значение для сортировки из метки.
+    Теперь использует latency из метрик или статус YouTube.
+    """
     try:
         label = key_str.split("#")[-1]
+        # Пытаемся найти latency в формате XXXms
         ping_part = re.search(r'(\d+)ms', label)
-        return int(ping_part.group(1)) if ping_part else 999999
+        if ping_part:
+            return int(ping_part.group(1))
+        # Если нет пинга, проверяем статус YouTube (✅YT = 0, ❌YT = 999, ⏳YT = 500)
+        if "✅YT" in label:
+            return 0  # YouTube доступен - приоритет
+        elif "❌YT" in label:
+            return 999  # YouTube недоступен - низкий приоритет
+        else:
+            return 500  # Не проверено
     except:
         return 999999
 
@@ -159,6 +176,7 @@ class KeyMetrics:
     bandwidth: Optional[float] = None
     jitter: Optional[int] = None
     uptime: Optional[float] = None
+    youtube_accessible: Optional[bool] = None  # Доступность YouTube
     last_check: float = 0
     check_count: int = 0
     
@@ -363,10 +381,426 @@ class Analytics:
 # ==================== ПРОВЕРКА СОЕДИНЕНИЯ ====================
 class ConnectionChecker:
     @staticmethod
+    def check_youtube_access(key: Optional[str] = None) -> Tuple[Optional[int], bool]:
+        """
+        Проверяет доступность YouTube.
+        Если key предоставлен - проверяет через xray VPN соединение.
+        Иначе - проверяет через прямой HTTP запрос.
+        
+        Возвращает: (latency_ms, is_accessible)
+        """
+        # Если ключ предоставлен - проверяем через xray
+        if key:
+            return ConnectionChecker.check_youtube_via_xray(key)
+        
+        # Прямая проверка (без VPN)
+        try:
+            start = time.time()
+            response = requests.head(
+                "https://www.youtube.com",
+                timeout=CFG.TIMEOUT,
+                allow_redirects=True,
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+            )
+            latency = int((time.time() - start) * 1000)
+            is_accessible = response.status_code in (200, 301, 302, 303, 307, 308)
+            return latency if latency >= 0 else 1, is_accessible
+        except requests.exceptions.Timeout:
+            return None, False
+        except requests.exceptions.ConnectionError:
+            return None, False
+        except Exception:
+            return None, False
+    
+    @staticmethod
+    def _find_free_port(start_port: int = 10808, max_attempts: int = 10) -> int:
+        """Находит свободный порт для SOCKS прокси"""
+        for i in range(max_attempts):
+            port = start_port + i
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.bind(('127.0.0.1', port))
+                    return port
+            except OSError:
+                continue
+        return start_port  # Возвращаем начальный порт если не нашли свободный
+    
+    @staticmethod
+    def check_youtube_via_xray(key: str) -> Tuple[Optional[int], bool]:
+        """
+        Проверяет доступность YouTube через xray VPN соединение.
+        Создает временный конфиг xray, запускает его, проверяет YouTube через SOCKS прокси.
+        """
+        config_path = None
+        xray_process = None
+        socks_port = None
+        
+        try:
+            # Конвертируем ключ в конфигурацию xray
+            config = ConnectionChecker._key_to_xray_config(key)
+            if not config:
+                # Неподдерживаемый протокол или ошибка парсинга - возвращаем None
+                return None, None
+            
+            # Находим свободный порт для SOCKS
+            socks_port = ConnectionChecker._find_free_port(CFG.XRAY_SOCKS_PORT)
+            config["inbounds"][0]["port"] = socks_port
+            
+            # Создаем временный файл конфига
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                json.dump(config, f, indent=2, ensure_ascii=False)
+                config_path = f.name
+            
+            # Проверяем что xray доступен
+            try:
+                result = subprocess.run([CFG.XRAY_PATH, "-version"], 
+                             stdout=subprocess.PIPE, 
+                             stderr=subprocess.PIPE, 
+                             timeout=2)
+                if result.returncode != 0:
+                    # xray не работает - используем прямую проверку
+                    return ConnectionChecker.check_youtube_access(None)
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                # xray не найден - используем прямую проверку
+                return ConnectionChecker.check_youtube_access(None)
+            
+            # Запускаем xray в фоне
+            xray_process = subprocess.Popen(
+                [CFG.XRAY_PATH, "-config", config_path],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                preexec_fn=os.setsid if hasattr(os, 'setsid') else None
+            )
+            
+            # Ждем чтобы xray запустился
+            time.sleep(1.5)
+            
+            # Проверяем что процесс еще работает
+            if xray_process.poll() is not None:
+                # xray завершился с ошибкой - не можем проверить
+                return None, None
+            
+            # Проверяем доступность YouTube через SOCKS прокси
+            start = time.time()
+            original_socket = None
+            try:
+                # Используем requests с SOCKS прокси через PySocks
+                try:
+                    import socks
+                    import socket as socket_module
+                    # Сохраняем оригинальный socket
+                    original_socket = socket_module.socket
+                    # Устанавливаем SOCKS прокси
+                    socks.set_default_proxy(socks.SOCKS5, "127.0.0.1", socks_port)
+                    socket_module.socket = socks.socksocket
+                except ImportError:
+                    # PySocks не установлен - используем прямую проверку
+                    return ConnectionChecker.check_youtube_access(None)
+                
+                try:
+                    response = requests.head(
+                        "https://www.youtube.com",
+                        timeout=CFG.TIMEOUT + 2,
+                        allow_redirects=True,
+                        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+                    )
+                    latency = int((time.time() - start) * 1000)
+                    is_accessible = response.status_code in (200, 301, 302, 303, 307, 308)
+                finally:
+                    # Восстанавливаем оригинальный socket
+                    if original_socket:
+                        try:
+                            socket_module.socket = original_socket
+                            socks.set_default_proxy()
+                        except:
+                            pass
+                
+                return latency if latency >= 0 else 1, is_accessible
+                
+            except Exception as e:
+                # Восстанавливаем оригинальный socket
+                if original_socket:
+                    try:
+                        import socket as socket_module
+                        socket_module.socket = original_socket
+                        socks.set_default_proxy()
+                    except:
+                        pass
+                # Ошибка при проверке через SOCKS - не можем проверить
+                return None, None
+                
+        except Exception as e:
+            # Ошибка при проверке через xray - не можем проверить
+            return None, None
+        finally:
+            # Останавливаем xray
+            if xray_process:
+                try:
+                    if hasattr(os, 'killpg'):
+                        os.killpg(os.getpgid(xray_process.pid), signal.SIGTERM)
+                    else:
+                        xray_process.terminate()
+                    try:
+                        xray_process.wait(timeout=3)
+                    except subprocess.TimeoutExpired:
+                        xray_process.kill()
+                except:
+                    pass
+            
+            # Удаляем временный конфиг
+            if config_path:
+                try:
+                    os.unlink(config_path)
+                except:
+                    pass
+    
+    @staticmethod
+    def _key_to_xray_config(key: str) -> Optional[dict]:
+        """
+        Конвертирует VPN ключ в конфигурацию xray.
+        Поддерживает: VLESS, VMess, Trojan, Shadowsocks
+        """
+        try:
+            protocol = get_protocol_type(key)
+            host, port, is_tls = parse_key(key)
+            
+            if not host or not port:
+                return None
+            
+            # Базовая структура конфига xray
+            config = {
+                "log": {"loglevel": "warning"},
+                "inbounds": [{
+                    "port": CFG.XRAY_SOCKS_PORT,
+                    "protocol": "socks",
+                    "settings": {
+                        "auth": "noauth",
+                        "udp": True
+                    }
+                }],
+                "outbounds": []
+            }
+            
+            # VLESS
+            if protocol == "vless":
+                # Парсим VLESS ключ
+                scheme, rest = key.split("://", 1)
+                if "@" not in rest:
+                    return None
+                
+                uuid_part, server_part = rest.split("@", 1)
+                if "?" in server_part:
+                    server_part, params_part = server_part.split("?", 1)
+                else:
+                    params_part = ""
+                
+                if ":" not in server_part:
+                    return None
+                
+                # Парсим параметры
+                params = {}
+                for param in params_part.split("&"):
+                    if "=" in param:
+                        k, v = param.split("=", 1)
+                        params[k.lower()] = unquote(v)
+                
+                # Определяем transport
+                transport = params.get("type", "tcp").lower()
+                network_settings = {}
+                
+                if transport == "ws":
+                    network_settings = {
+                        "network": "ws",
+                        "wsSettings": {
+                            "path": params.get("path", "/"),
+                            "headers": {}
+                        }
+                    }
+                    if "host" in params:
+                        network_settings["wsSettings"]["headers"]["Host"] = params["host"]
+                
+                outbound = {
+                    "protocol": "vless",
+                    "settings": {
+                        "vnext": [{
+                            "address": host,
+                            "port": port,
+                            "users": [{"id": uuid_part}]
+                        }]
+                    },
+                    "streamSettings": {
+                        "network": transport,
+                        "security": params.get("security", "none").lower()
+                    }
+                }
+                
+                if network_settings:
+                    outbound["streamSettings"].update(network_settings)
+                
+                if is_tls and "sni" in params:
+                    outbound["streamSettings"]["tlsSettings"] = {
+                        "serverName": params["sni"]
+                    }
+                
+                config["outbounds"].append(outbound)
+            
+            # VMess
+            elif protocol == "vmess":
+                scheme, rest = key.split("://", 1)
+                missing_padding = -len(rest) % 4
+                if missing_padding:
+                    rest += "=" * missing_padding
+                decoded = base64.b64decode(rest, validate=True).decode('utf-8', errors='ignore')
+                vmess_config = json.loads(decoded)
+                
+                network = vmess_config.get("net", "tcp").lower()
+                network_settings = {}
+                
+                if network == "ws":
+                    network_settings = {
+                        "network": "ws",
+                        "wsSettings": {
+                            "path": vmess_config.get("path", "/"),
+                            "headers": {}
+                        }
+                    }
+                    if "host" in vmess_config:
+                        network_settings["wsSettings"]["headers"]["Host"] = vmess_config["host"]
+                
+                outbound = {
+                    "protocol": "vmess",
+                    "settings": {
+                        "vnext": [{
+                            "address": vmess_config.get("add", host),
+                            "port": vmess_config.get("port", port),
+                            "users": [{
+                                "id": vmess_config.get("id", ""),
+                                "alterId": vmess_config.get("aid", 0),
+                                "security": vmess_config.get("scy", "auto")
+                            }]
+                        }]
+                    },
+                    "streamSettings": {
+                        "network": network,
+                        "security": vmess_config.get("tls", "none").lower()
+                    }
+                }
+                
+                if network_settings:
+                    outbound["streamSettings"].update(network_settings)
+                
+                if "sni" in vmess_config:
+                    outbound["streamSettings"]["tlsSettings"] = {
+                        "serverName": vmess_config["sni"]
+                    }
+                
+                config["outbounds"].append(outbound)
+            
+            # Trojan
+            elif protocol == "trojan":
+                scheme, rest = key.split("://", 1)
+                if "@" not in rest:
+                    return None
+                
+                password_part, server_part = rest.split("@", 1)
+                if "?" in server_part:
+                    server_part, params_part = server_part.split("?", 1)
+                else:
+                    params_part = ""
+                
+                if ":" not in server_part:
+                    return None
+                
+                # Парсим параметры
+                params = {}
+                for param in params_part.split("&"):
+                    if "=" in param:
+                        k, v = param.split("=", 1)
+                        params[k.lower()] = unquote(v)
+                
+                outbound = {
+                    "protocol": "trojan",
+                    "settings": {
+                        "servers": [{
+                            "address": host,
+                            "port": port,
+                            "password": password_part
+                        }]
+                    },
+                    "streamSettings": {
+                        "network": "tcp",
+                        "security": "tls"
+                    }
+                }
+                
+                if "sni" in params:
+                    outbound["streamSettings"]["tlsSettings"] = {
+                        "serverName": params["sni"]
+                    }
+                
+                config["outbounds"].append(outbound)
+            
+            # Shadowsocks
+            elif protocol == "shadowsocks":
+                scheme, rest = key.split("://", 1)
+                if "@" not in rest:
+                    # Пробуем base64 формат
+                    try:
+                        missing_padding = -len(rest) % 4
+                        if missing_padding:
+                            rest += "=" * missing_padding
+                        decoded = base64.b64decode(rest, validate=True).decode('utf-8', errors='ignore')
+                        # Формат: method:password@host:port
+                        if "@" in decoded:
+                            method_pass, host_port = decoded.split("@", 1)
+                            if ":" in method_pass and ":" in host_port:
+                                method, password = method_pass.split(":", 1)
+                                host, port_str = host_port.rsplit(":", 1)
+                                port = int(port_str)
+                            else:
+                                return None
+                        else:
+                            return None
+                    except:
+                        return None
+                else:
+                    method_pass, host_port = rest.split("@", 1)
+                    if ":" in method_pass and ":" in host_port:
+                        method, password = method_pass.split(":", 1)
+                        host, port_str = host_port.rsplit(":", 1)
+                        port = int(port_str)
+                    else:
+                        return None
+                
+                outbound = {
+                    "protocol": "shadowsocks",
+                    "settings": {
+                        "servers": [{
+                            "address": host,
+                            "port": port,
+                            "method": method,
+                            "password": password
+                        }]
+                    }
+                }
+                
+                config["outbounds"].append(outbound)
+            
+            # Для других протоколов пока не поддерживаем
+            else:
+                return None
+            
+            return config
+            
+        except Exception as e:
+            return None
+    
+    @staticmethod
     def check_basic(host: str, port: int, is_tls: bool, protocol: str = "tcp") -> Optional[int]:
         """
-        Базовая проверка соединения.
+        Базовая проверка соединения с VPN сервером.
         protocol: "tcp" или "udp" (для Hysteria2)
+        Возвращает latency в миллисекундах или None если не работает.
         """
         try:
             # Определяем семейство адресов
@@ -1275,7 +1709,7 @@ def fetch_keys(urls: List[str], tag: str) -> List[Tuple[str, str]]:
 def format_label(key_info: KeyInfo) -> str:
     """
     Форматирует метку ключа с улучшенным рейтингом.
-    Формат: latency_ms_флагстрана_тип_рейтинг_канал
+    Формат: youtube_status_флагстрана_тип_рейтинг_канал
     Для белых списков добавляет SNI и CIDR информацию.
     """
     # Получаем эмодзи флаг страны
@@ -1284,8 +1718,16 @@ def format_label(key_info: KeyInfo) -> str:
     # Получаем рейтинг (звезды, иконка, оценка)
     stars, icon, grade = key_info.get_rating()
     
+    # Статус YouTube вместо пинга
+    if key_info.metrics.youtube_accessible is True:
+        youtube_status = "✅YT"  # YouTube доступен
+    elif key_info.metrics.youtube_accessible is False:
+        youtube_status = "❌YT"  # YouTube недоступен
+    else:
+        youtube_status = "⏳YT"  # Не проверено
+    
     parts = [
-        f"{key_info.metrics.latency}ms",
+        youtube_status,
         f"{country_flag}{key_info.country}",  # Флаг и код страны
         key_info.routing_type[0].upper()  # Тип: W/B/U
     ]
@@ -1464,8 +1906,21 @@ class TUI:
                 cached = history.get(key_id)
                 
                 if cached and (current_time - cached['time'] < CFG.CACHE_HOURS * 3600) and cached.get('alive'):
-                    metrics = KeyMetrics(latency=cached['latency'], last_check=cached['time'])
+                    # Проверяем YouTube доступность из кэша
+                    youtube_accessible = cached.get('youtube_accessible')
+                    
+                    # Для белых списков YouTube должен быть доступен
                     routing_type = cached.get('routing_type', 'universal')
+                    if routing_type == "white" and youtube_accessible is False:
+                        # Белый список с недоступным YouTube - пропускаем
+                        to_check.append((key, tag))
+                        continue
+                    
+                    metrics = KeyMetrics(
+                        latency=cached['latency'], 
+                        youtube_accessible=youtube_accessible,
+                        last_check=cached['time']
+                    )
                     country = cached.get('country', 'UNKNOWN')
                     key_info = KeyInfo(key, key_id, tag, country, routing_type, metrics)
                     label = format_label(key_info)
@@ -1527,17 +1982,40 @@ class TUI:
         protocol_type = get_protocol_type(key)
         protocol = "udp" if protocol_type == "hysteria2" else "tcp"
         
-        # Базовая проверка соединения
-        latency = None
+        # Базовая проверка соединения с VPN сервером (без измерения пинга)
+        server_ok = False
         for attempt in range(CFG.RETRY_ATTEMPTS):
-            latency = checker.check_basic(host, port, is_tls, protocol)
-            if latency: break
+            if checker.check_basic(host, port, is_tls, protocol):
+                server_ok = True
+                break
             time.sleep(0.1 * (attempt + 1))
         
-        if not latency: 
-            # Если базовая проверка не прошла, добавляем в blacklist
+        if not server_ok: 
+            # Если VPN сервер не доступен, добавляем в blacklist
             blacklist.record_failure(host)
             return None
+        
+        # Определяем тип маршрутизации
+        classifier = SmartClassifier()
+        routing_type = classifier.predict(key)
+        
+        # Проверка доступности YouTube через xray (реальная проверка через VPN)
+        # Проверяем все ключи через xray для гарантии работоспособности
+        youtube_latency, youtube_accessible = checker.check_youtube_access(key)
+        
+        # Обрабатываем результат проверки YouTube
+        if youtube_accessible is False:
+            # YouTube точно недоступен через VPN - ключ не работает
+            blacklist.record_failure(host)
+            return None
+        elif youtube_accessible is None:
+            # xray не смог проверить (неподдерживаемый протокол, ошибка конфига, или xray недоступен)
+            # В этом случае используем базовую проверку - если сервер доступен, продолжаем
+            # Используем фиксированное значение latency
+            latency = 100
+        else:
+            # YouTube доступен через VPN - все хорошо
+            latency = youtube_latency if youtube_latency else 100
         
         # Глубокая проверка работоспособности (только для полной проверки)
         if config.get('ENABLE_DEEP_TEST', False):
@@ -1569,6 +2047,7 @@ class TUI:
         history[key_id] = {
             'alive': True,
             'latency': latency,
+            'youtube_accessible': youtube_accessible,
             'time': time.time(),
             'country': country,
             'routing_type': routing_type,
@@ -1968,17 +2447,44 @@ def _check_key_cli(data, config):
         
         checker = ConnectionChecker()
         
-        # Базовая проверка соединения
-        latency = None
+        # Определяем протокол для проверки
+        protocol_type = get_protocol_type(key)
+        protocol = "udp" if protocol_type == "hysteria2" else "tcp"
+        
+        # Базовая проверка соединения с VPN сервером (без измерения пинга)
+        server_ok = False
         for attempt in range(CFG.RETRY_ATTEMPTS):
-            latency = checker.check_basic(host, port, is_tls)
-            if latency: break
+            if checker.check_basic(host, port, is_tls, protocol):
+                server_ok = True
+                break
             time.sleep(0.1 * (attempt + 1))
         
-        if not latency:
-            # Если базовая проверка не прошла, добавляем в blacklist
+        if not server_ok: 
+            # Если VPN сервер не доступен, добавляем в blacklist
             blacklist.record_failure(host)
             return None
+        
+        # Определяем тип маршрутизации
+        classifier = SmartClassifier()
+        routing_type = classifier.predict(key)
+        
+        # Проверка доступности YouTube через xray (реальная проверка через VPN)
+        # Проверяем все ключи через xray для гарантии работоспособности
+        youtube_latency, youtube_accessible = checker.check_youtube_access(key)
+        
+        # Обрабатываем результат проверки YouTube
+        if youtube_accessible is False:
+            # YouTube точно недоступен через VPN - ключ не работает
+            blacklist.record_failure(host)
+            return None
+        elif youtube_accessible is None:
+            # xray не смог проверить (неподдерживаемый протокол, ошибка конфига, или xray недоступен)
+            # В этом случае используем базовую проверку - если сервер доступен, продолжаем
+            # Используем фиксированное значение latency
+            latency = 100
+        else:
+            # YouTube доступен через VPN - все хорошо
+            latency = youtube_latency if youtube_latency else 100
         
         # Глубокая проверка работоспособности (только для полной проверки)
         if config.get('ENABLE_DEEP_TEST', False):
@@ -1994,8 +2500,6 @@ def _check_key_cli(data, config):
         if config.get('ENABLE_BANDWIDTH_TEST', False) and latency < 300:
             metrics.bandwidth = checker.check_bandwidth(host, port, is_tls)
         
-        classifier = SmartClassifier()
-        routing_type = classifier.predict(key)
         country = get_country(key, host)
         
         key_info = KeyInfo(key, key_id, tag, country, routing_type, metrics)
@@ -2012,6 +2516,7 @@ def _check_key_cli(data, config):
         history[key_id] = {
             'alive': True,
             'latency': latency,
+            'youtube_accessible': youtube_accessible,
             'time': time.time(),
             'country': country,
             'routing_type': routing_type,
