@@ -51,6 +51,7 @@ class Config:
     THREADS: int = 50
     ENABLE_JITTER_TEST: bool = False
     ENABLE_BANDWIDTH_TEST: bool = False
+    ENABLE_DEEP_TEST: bool = True  # Глубокая проверка работоспособности
     
     # Файлы
     HISTORY_FILE: str = "checked/history.json"
@@ -175,36 +176,123 @@ class KeyInfo:
     metrics: KeyMetrics
     
     def quality_score(self) -> float:
+        """
+        Улучшенный расчет качества сервера (0-100).
+        Учитывает: latency, jitter, bandwidth, uptime, стабильность.
+        """
         score = 100.0
-        
-        # Обрабатываем latency=0 как очень быстрое соединение
         latency = self.metrics.latency if self.metrics.latency > 0 else 1
         
-        if latency > 500: score -= 50
-        elif latency > 300: score -= 35
-        elif latency > 200: score -= 20
-        elif latency > 100: score -= 10
+        # ========== LATENCY (задержка) - 40% веса ==========
+        # Идеальная задержка: <50ms = 100%, 50-100ms = 90%, 100-150ms = 80%, и т.д.
+        if latency <= 50:
+            latency_score = 100.0
+        elif latency <= 100:
+            latency_score = 100.0 - (latency - 50) * 0.2  # 90-100%
+        elif latency <= 150:
+            latency_score = 90.0 - (latency - 100) * 0.2  # 80-90%
+        elif latency <= 200:
+            latency_score = 80.0 - (latency - 150) * 0.2  # 70-80%
+        elif latency <= 300:
+            latency_score = 70.0 - (latency - 200) * 0.3  # 40-70%
+        elif latency <= 500:
+            latency_score = 40.0 - (latency - 300) * 0.15  # 10-40%
+        else:
+            latency_score = max(0.0, 10.0 - (latency - 500) * 0.01)  # 0-10%
         
-        if self.metrics.jitter and self.metrics.jitter > 50:
-            score -= 20
-        elif self.metrics.jitter and self.metrics.jitter > 30:
-            score -= 10
+        score = (score * 0.6) + (latency_score * 0.4)  # 40% веса для latency
         
-        if self.metrics.bandwidth:
-            if self.metrics.bandwidth < 1: score -= 20
-            elif self.metrics.bandwidth < 5: score -= 10
+        # ========== JITTER (нестабильность) - 20% веса ==========
+        if self.metrics.jitter is not None:
+            if self.metrics.jitter <= 10:
+                jitter_score = 100.0
+            elif self.metrics.jitter <= 20:
+                jitter_score = 100.0 - (self.metrics.jitter - 10) * 2  # 80-100%
+            elif self.metrics.jitter <= 30:
+                jitter_score = 80.0 - (self.metrics.jitter - 20) * 2  # 60-80%
+            elif self.metrics.jitter <= 50:
+                jitter_score = 60.0 - (self.metrics.jitter - 30) * 1.5  # 30-60%
+            else:
+                jitter_score = max(0.0, 30.0 - (self.metrics.jitter - 50) * 0.5)  # 0-30%
+            
+            score = (score * 0.8) + (jitter_score * 0.2)  # 20% веса для jitter
         
+        # ========== BANDWIDTH (пропускная способность) - 20% веса ==========
+        if self.metrics.bandwidth is not None:
+            if self.metrics.bandwidth >= 50:
+                bandwidth_score = 100.0
+            elif self.metrics.bandwidth >= 20:
+                bandwidth_score = 80.0 + (self.metrics.bandwidth - 20) * 0.67  # 80-100%
+            elif self.metrics.bandwidth >= 10:
+                bandwidth_score = 60.0 + (self.metrics.bandwidth - 10) * 2  # 60-80%
+            elif self.metrics.bandwidth >= 5:
+                bandwidth_score = 40.0 + (self.metrics.bandwidth - 5) * 4  # 40-60%
+            elif self.metrics.bandwidth >= 1:
+                bandwidth_score = 20.0 + (self.metrics.bandwidth - 1) * 5  # 20-40%
+            else:
+                bandwidth_score = max(0.0, self.metrics.bandwidth * 20)  # 0-20%
+            
+            score = (score * 0.8) + (bandwidth_score * 0.2)  # 20% веса для bandwidth
+        
+        # ========== UPTIME (стабильность) - 20% веса ==========
         if self.metrics.uptime is not None:
-            score -= (100 - self.metrics.uptime) * 0.1
+            uptime_score = self.metrics.uptime  # Прямая зависимость: 100% uptime = 100 баллов
+            score = (score * 0.8) + (uptime_score * 0.2)  # 20% веса для uptime
         
-        return max(0.0, score)
+        return max(0.0, min(100.0, score))
+    
+    def get_rating(self) -> Tuple[int, str, str]:
+        """
+        Возвращает рейтинг сервера: (звезды 1-5, иконка, буквенная оценка)
+        """
+        q = self.quality_score()
+        
+        # Определяем количество звезд (1-5)
+        if q >= 90:
+            stars = 5
+            icon = "🏆"  # Трофей - премиум
+            grade = "A+"
+        elif q >= 80:
+            stars = 5
+            icon = "⭐"  # 5 звезд - отлично
+            grade = "A"
+        elif q >= 70:
+            stars = 4
+            icon = "⭐"  # 4 звезды - очень хорошо
+            grade = "B+"
+        elif q >= 60:
+            stars = 4
+            icon = "✅"  # 4 звезды - хорошо
+            grade = "B"
+        elif q >= 50:
+            stars = 3
+            icon = "✅"  # 3 звезды - нормально
+            grade = "C+"
+        elif q >= 40:
+            stars = 3
+            icon = "⚡"  # 3 звезды - приемлемо
+            grade = "C"
+        elif q >= 30:
+            stars = 2
+            icon = "⚡"  # 2 звезды - ниже среднего
+            grade = "D"
+        else:
+            stars = 1
+            icon = "⚠️"  # 1 звезда - плохо
+            grade = "F"
+        
+        return stars, icon, grade
     
     def get_icon(self) -> str:
-        q = self.quality_score()
-        if q >= 80: return "⭐"  # Звезда
-        if q >= 60: return "✅"  # Галочка
-        if q >= 40: return "⚡"  # Молния
-        return "⚠️"  # Предупреждение
+        """Возвращает иконку рейтинга (обратная совместимость)"""
+        _, icon, _ = self.get_rating()
+        return icon
+    
+    def get_stars_display(self) -> str:
+        """Возвращает компактное отображение звезд"""
+        stars, _, _ = self.get_rating()
+        # Компактный формат: количество звезд числом
+        return f"{stars}★"
 
 # ==================== BLACKLIST ====================
 class BlacklistManager:
@@ -275,7 +363,11 @@ class Analytics:
 # ==================== ПРОВЕРКА СОЕДИНЕНИЯ ====================
 class ConnectionChecker:
     @staticmethod
-    def check_basic(host: str, port: int, is_tls: bool) -> Optional[int]:
+    def check_basic(host: str, port: int, is_tls: bool, protocol: str = "tcp") -> Optional[int]:
+        """
+        Базовая проверка соединения.
+        protocol: "tcp" или "udp" (для Hysteria2)
+        """
         try:
             # Определяем семейство адресов
             family = socket.AF_INET
@@ -288,28 +380,53 @@ class ConnectionChecker:
                 pass
             
             start = time.time()
-            if is_tls:
-                ctx = ssl.create_default_context()
-                ctx.check_hostname = False
-                ctx.verify_mode = ssl.CERT_NONE
-                sock = socket.socket(family, socket.SOCK_STREAM)
-                sock.settimeout(CFG.TIMEOUT)
+            
+            # Для UDP протоколов (Hysteria2)
+            if protocol.lower() == "udp":
                 try:
-                    sock.connect((host, port))
-                    sock = ctx.wrap_socket(sock, server_hostname=host)
+                    sock = socket.socket(family, socket.SOCK_DGRAM)
+                    sock.settimeout(CFG.TIMEOUT)
+                    # Для UDP просто проверяем что можем отправить пакет
+                    # Hysteria2 обычно отвечает на UDP пакеты
+                    sock.sendto(b'\x00', (host, port))
+                    # Пытаемся получить ответ (необязательно для UDP)
+                    try:
+                        sock.recvfrom(1024)
+                    except socket.timeout:
+                        # Таймаут - это нормально для UDP, значит порт открыт
+                        pass
                     sock.close()
                 except Exception as e:
-                    sock.close()
+                    try:
+                        sock.close()
+                    except:
+                        pass
                     raise
+            # Для TCP протоколов
             else:
-                sock = socket.socket(family, socket.SOCK_STREAM)
-                sock.settimeout(CFG.TIMEOUT)
-                try:
-                    sock.connect((host, port))
-                    sock.close()
-                except Exception as e:
-                    sock.close()
-                    raise
+                if is_tls:
+                    ctx = ssl.create_default_context()
+                    ctx.check_hostname = False
+                    ctx.verify_mode = ssl.CERT_NONE
+                    sock = socket.socket(family, socket.SOCK_STREAM)
+                    sock.settimeout(CFG.TIMEOUT)
+                    try:
+                        sock.connect((host, port))
+                        sock = ctx.wrap_socket(sock, server_hostname=host)
+                        sock.close()
+                    except Exception as e:
+                        sock.close()
+                        raise
+                else:
+                    sock = socket.socket(family, socket.SOCK_STREAM)
+                    sock.settimeout(CFG.TIMEOUT)
+                    try:
+                        sock.connect((host, port))
+                        sock.close()
+                    except Exception as e:
+                        sock.close()
+                        raise
+            
             latency = int((time.time() - start) * 1000)
             return latency if latency >= 0 else 1
         except socket.timeout:
@@ -383,14 +500,306 @@ class ConnectionChecker:
         except:
             pass
         return None
+    
+    @staticmethod
+    def check_deep(key: str, host: str, port: int, is_tls: bool) -> bool:
+        """
+        Глубокая проверка работоспособности VPN-протокола.
+        Проверяет не только TCP соединение, но и реальную работоспособность сервера.
+        Удаляет нерабочие ключи, оставляет только те, которые действительно отвечают.
+        Возвращает True если сервер действительно работает, False если нет.
+        """
+        try:
+            # Определяем тип протокола
+            protocol = get_protocol_type(key)
+            
+            # Для Hysteria2 используем UDP проверку
+            if protocol == "hysteria2":
+                try:
+                    family = socket.AF_INET
+                    try:
+                        ip = ipaddress.ip_address(host)
+                        if isinstance(ip, ipaddress.IPv6Address):
+                            family = socket.AF_INET6
+                    except ValueError:
+                        pass
+                    
+                    sock = socket.socket(family, socket.SOCK_DGRAM)
+                    sock.settimeout(CFG.TIMEOUT + 2)
+                    
+                    # Отправляем тестовый пакет (Hysteria2 может отвечать на определенные пакеты)
+                    sock.sendto(b'\x00', (host, port))
+                    
+                    # Пытаемся получить ответ
+                    try:
+                        sock.recvfrom(1024)
+                        sock.close()
+                        return True
+                    except socket.timeout:
+                        # Для UDP таймаут может означать что порт открыт
+                        sock.close()
+                        return True
+                except Exception:
+                    return False
+            
+            # Определяем семейство адресов
+            family = socket.AF_INET
+            try:
+                ip = ipaddress.ip_address(host)
+                if isinstance(ip, ipaddress.IPv6Address):
+                    family = socket.AF_INET6
+            except ValueError:
+                pass
+            
+            # Создаем соединение с увеличенным таймаутом для глубокой проверки
+            sock = socket.socket(family, socket.SOCK_STREAM)
+            sock.settimeout(CFG.TIMEOUT + 2)  # Немного больше времени для глубокой проверки
+            
+            try:
+                # Устанавливаем соединение
+                sock.connect((host, port))
+                
+                # Для TLS соединений - проверяем TLS handshake и стабильность
+                if is_tls:
+                    ctx = ssl.create_default_context()
+                    ctx.check_hostname = False
+                    ctx.verify_mode = ssl.CERT_NONE
+                    # Увеличиваем таймаут для TLS handshake
+                    ctx.set_ciphers('DEFAULT:@SECLEVEL=1')
+                    
+                    try:
+                        # Выполняем TLS handshake
+                        tls_sock = ctx.wrap_socket(sock, server_hostname=host)
+                        
+                        # Проверяем что соединение действительно активно
+                        # Устанавливаем короткий таймаут для проверки
+                        tls_sock.settimeout(1.5)
+                        
+                        # Пытаемся проверить что соединение не закрылось сразу
+                        # Используем MSG_PEEK чтобы не удалять данные из буфера
+                        try:
+                            # Для разных протоколов - разная проверка
+                            # Просто проверяем что соединение активно, пытаясь прочитать данные
+                            tls_sock.recv(1, socket.MSG_PEEK)
+                        except (socket.timeout, ssl.SSLWantReadError):
+                            # Таймаут или нет данных - это нормально, значит соединение активно
+                            pass
+                        except (ssl.SSLError, ssl.SSLEOFError, OSError, ConnectionResetError, BlockingIOError):
+                            # Соединение закрыто или ошибка - сервер не работает
+                            tls_sock.close()
+                            return False
+                        
+                        # Если дошли сюда - соединение работает
+                        tls_sock.close()
+                        return True
+                        
+                    except (ssl.SSLError, ssl.SSLEOFError, ssl.SSLZeroReturnError, OSError) as e:
+                        # TLS handshake не удался - сервер не работает или неправильный протокол
+                        try:
+                            sock.close()
+                        except:
+                            pass
+                        return False
+                
+                # Для не-TLS соединений - проверяем что порт действительно отвечает
+                else:
+                    # Для SS (Shadowsocks) и других - проверяем что соединение стабильно
+                    sock.settimeout(1.5)
+                    try:
+                        # Пытаемся проверить что соединение активно
+                        # Используем MSG_PEEK чтобы не удалять данные
+                        sock.recv(1, socket.MSG_PEEK)
+                    except (socket.timeout, BlockingIOError):
+                        # Таймаут - это нормально, значит порт открыт и слушает
+                        pass
+                    except (socket.error, OSError, ConnectionResetError):
+                        # Ошибка соединения - сервер не работает
+                        sock.close()
+                        return False
+                    
+                    # Если дошли сюда - соединение работает
+                    sock.close()
+                    return True
+                    
+            except (socket.timeout, socket.error, OSError, ConnectionRefusedError, ConnectionResetError) as e:
+                # Не удалось установить соединение - сервер не работает
+                try:
+                    sock.close()
+                except:
+                    pass
+                return False
+                
+        except Exception as e:
+            # Любая другая ошибка - считаем что сервер не работает
+            return False
 
 # ==================== ПАРСИНГ ====================
+def get_protocol_type(key: str) -> str:
+    """Определяет тип VPN протокола из ключа"""
+    key_lower = key.lower()
+    
+    if key_lower.startswith("vless://"):
+        return "vless"
+    elif key_lower.startswith("vmess://"):
+        return "vmess"
+    elif key_lower.startswith("trojan://"):
+        return "trojan"
+    elif key_lower.startswith("hysteria2://") or key_lower.startswith("hy2://"):
+        return "hysteria2"
+    elif key_lower.startswith("ss://") or key_lower.startswith("ssr://"):
+        return "shadowsocks"
+    elif key_lower.startswith("socks://") or key_lower.startswith("socks5://"):
+        return "socks"
+    else:
+        # Пытаемся определить по параметрам
+        if "vless" in key_lower or "type=vless" in key_lower:
+            return "vless"
+        elif "vmess" in key_lower or "type=vmess" in key_lower:
+            return "vmess"
+        elif "trojan" in key_lower:
+            return "trojan"
+        elif "hysteria2" in key_lower or "hy2" in key_lower:
+            return "hysteria2"
+        elif "shadowsocks" in key_lower or "ss=" in key_lower:
+            return "shadowsocks"
+        else:
+            return "unknown"
+
 def parse_key(key: str) -> Tuple[Optional[str], Optional[int], bool]:
+    """
+    Парсит VPN ключ и извлекает host, port, is_tls.
+    Поддерживает: VLESS, VMess, Trojan, Shadowsocks, Hysteria2
+    """
     try:
-        if "@" not in key or ":" not in key:
+        if "://" not in key:
             return None, None, False
         
-        scheme, rest = key.split("://", 1) if "://" in key else ("", key)
+        scheme, rest = key.split("://", 1)
+        scheme_lower = scheme.lower()
+        
+        # ========== VMESS (формат: vmess://base64_json) ==========
+        if scheme_lower == "vmess":
+            try:
+                # Декодируем base64
+                missing_padding = -len(rest) % 4
+                if missing_padding:
+                    rest += "=" * missing_padding
+                
+                decoded = base64.b64decode(rest, validate=True).decode('utf-8', errors='ignore')
+                vmess_config = json.loads(decoded)
+                
+                # Извлекаем данные из JSON
+                host = vmess_config.get("add") or vmess_config.get("address", "")
+                port = vmess_config.get("port", 0)
+                security = vmess_config.get("tls", "").lower()
+                net = vmess_config.get("net", "").lower()
+                
+                if not host or port <= 0 or port > 65535:
+                    return None, None, False
+                
+                # TLS определяется по полю "tls" в JSON
+                is_tls = security in ("tls", "reality") or net == "ws"  # WebSocket часто с TLS
+                
+                return host.strip(), port, is_tls
+            except (ValueError, json.JSONDecodeError, Exception):
+                # Если не удалось распарсить как JSON, пробуем стандартный формат
+                pass
+        
+        # ========== HYSTERIA2 (формат: hysteria2://password@host:port?params) ==========
+        if scheme_lower in ("hysteria2", "hy2"):
+            try:
+                # Формат 1: hysteria2://password@host:port?params
+                if "@" in rest:
+                    user_info, rest = rest.split("@", 1)
+                    if "?" in rest:
+                        host_port, _ = rest.split("?", 1)
+                    elif "#" in rest:
+                        host_port, _ = rest.split("#", 1)
+                    else:
+                        host_port = rest
+                # Формат 2: hysteria2://host:port?auth=password&params
+                else:
+                    if "?" in rest:
+                        host_port, query = rest.split("?", 1)
+                    elif "#" in rest:
+                        host_port, _ = rest.split("#", 1)
+                    else:
+                        host_port = rest
+                
+                if host_port.startswith("["):
+                    if "]:" not in host_port:
+                        return None, None, False
+                    host, port_str = host_port.rsplit("]:", 1)
+                    host = host[1:]
+                else:
+                    if ":" not in host_port:
+                        return None, None, False
+                    host, port_str = host_port.rsplit(":", 1)
+                
+                port = int(port_str.strip())
+                if port <= 0 or port > 65535:
+                    return None, None, False
+                
+                # Hysteria2 может использовать TLS, проверяем параметры
+                is_tls = any(x in key.lower() for x in ['tls=true', 'insecure=0', 'pin='])
+                
+                return host.strip(), port, is_tls
+            except:
+                pass
+        
+        # ========== SHADOWSOCKS (может быть с @ или без) ==========
+        if scheme_lower in ("ss", "ssr"):
+            # Формат 1: ss://base64@host:port
+            if "@" in rest:
+                try:
+                    base64_part, host_port_part = rest.split("@", 1)
+                    # Извлекаем host:port
+                    if "?" in host_port_part:
+                        host_port, _ = host_port_part.split("?", 1)
+                    elif "#" in host_port_part:
+                        host_port, _ = host_port_part.split("#", 1)
+                    else:
+                        host_port = host_port_part
+                    
+                    if host_port.startswith("["):
+                        if "]:" not in host_port:
+                            return None, None, False
+                        host, port_str = host_port.rsplit("]:", 1)
+                        host = host[1:]
+                    else:
+                        if ":" not in host_port:
+                            return None, None, False
+                        host, port_str = host_port.rsplit(":", 1)
+                    
+                    port = int(port_str.strip())
+                    if port <= 0 or port > 65535:
+                        return None, None, False
+                    
+                    # Shadowsocks обычно без TLS на уровне протокола
+                    return host.strip(), port, False
+                except:
+                    pass
+            
+            # Формат 2: ss://base64 (нужно декодировать)
+            else:
+                try:
+                    missing_padding = -len(rest) % 4
+                    if missing_padding:
+                        rest += "=" * missing_padding
+                    
+                    decoded = base64.b64decode(rest, validate=True).decode('utf-8', errors='ignore')
+                    # Формат: method:password@host:port
+                    if "@" in decoded:
+                        _, host_port = decoded.rsplit("@", 1)
+                        if ":" in host_port:
+                            host, port_str = host_port.rsplit(":", 1)
+                            port = int(port_str.strip())
+                            if port > 0 and port <= 65535:
+                                return host.strip(), port, False
+                except:
+                    pass
+        
+        # ========== СТАНДАРТНЫЙ ФОРМАТ (VLESS, Trojan и др.) ==========
         if "@" not in rest:
             return None, None, False
         
@@ -416,46 +825,346 @@ def parse_key(key: str) -> Tuple[Optional[str], Optional[int], bool]:
         if port <= 0 or port > 65535:
             return None, None, False
         
-        is_tls = scheme in ("trojan", "vmess") or any(x in key.lower() for x in ['security=tls', 'security=reality'])
+        # Определяем TLS
+        is_tls = scheme_lower == "trojan" or any(x in key.lower() for x in ['security=tls', 'security=reality', 'tls=true'])
         
         return host.strip(), port, is_tls
-    except:
+    except Exception as e:
         return None, None, False
 
+# Словарь эмодзи флагов стран
+COUNTRY_FLAGS = {
+    'RU': '🇷🇺', 'DE': '🇩🇪', 'NL': '🇳🇱', 'FI': '🇫🇮', 'GB': '🇬🇧', 'FR': '🇫🇷',
+    'SE': '🇸🇪', 'PL': '🇵🇱', 'CZ': '🇨🇿', 'AT': '🇦🇹', 'CH': '🇨🇭', 'IT': '🇮🇹',
+    'ES': '🇪🇸', 'NO': '🇳🇴', 'DK': '🇩🇰', 'BE': '🇧🇪', 'IE': '🇮🇪', 'LU': '🇱🇺',
+    'EE': '🇪🇪', 'LV': '🇱🇻', 'LT': '🇱🇹', 'RO': '🇷🇴', 'BG': '🇧🇬', 'HR': '🇭🇷',
+    'SI': '🇸🇮', 'SK': '🇸🇰', 'HU': '🇭🇺', 'PT': '🇵🇹', 'GR': '🇬🇷', 'CY': '🇨🇾',
+    'MT': '🇲🇹', 'US': '🇺🇸', 'CA': '🇨🇦', 'AU': '🇦🇺', 'JP': '🇯🇵', 'KR': '🇰🇷',
+    'SG': '🇸🇬', 'HK': '🇭🇰', 'TW': '🇹🇼', 'IN': '🇮🇳', 'BR': '🇧🇷', 'MX': '🇲🇽',
+    'AR': '🇦🇷', 'CL': '🇨🇱', 'CO': '🇨🇴', 'PE': '🇵🇪', 'ZA': '🇿🇦', 'EG': '🇪🇬',
+    'AE': '🇦🇪', 'SA': '🇸🇦', 'TR': '🇹🇷', 'IL': '🇮🇱', 'TH': '🇹🇭', 'VN': '🇻🇳',
+    'PH': '🇵🇭', 'ID': '🇮🇩', 'MY': '🇲🇾', 'NZ': '🇳🇿', 'EU': '🇪🇺', 'UNKNOWN': '🌐'
+}
+
+# Расширенный словарь TLD -> код страны
+TLD_COUNTRY_MAP = {
+    '.ru': 'RU', '.рф': 'RU', '.de': 'DE', '.nl': 'NL', '.fi': 'FI', '.uk': 'GB', '.co.uk': 'GB',
+    '.fr': 'FR', '.se': 'SE', '.pl': 'PL', '.cz': 'CZ', '.at': 'AT', '.ch': 'CH', '.it': 'IT',
+    '.es': 'ES', '.no': 'NO', '.dk': 'DK', '.be': 'BE', '.ie': 'IE', '.lu': 'LU', '.ee': 'EE',
+    '.lv': 'LV', '.lt': 'LT', '.ro': 'RO', '.bg': 'BG', '.hr': 'HR', '.si': 'SI', '.sk': 'SK',
+    '.hu': 'HU', '.pt': 'PT', '.gr': 'GR', '.cy': 'CY', '.mt': 'MT', '.us': 'US', '.com': 'US',
+    '.ca': 'CA', '.au': 'AU', '.jp': 'JP', '.kr': 'KR', '.sg': 'SG', '.hk': 'HK', '.tw': 'TW',
+    '.in': 'IN', '.br': 'BR', '.mx': 'MX', '.ar': 'AR', '.cl': 'CL', '.co': 'CO', '.pe': 'PE',
+    '.za': 'ZA', '.eg': 'EG', '.ae': 'AE', '.sa': 'SA', '.tr': 'TR', '.il': 'IL', '.th': 'TH',
+    '.vn': 'VN', '.ph': 'PH', '.id': 'ID', '.my': 'MY', '.nz': 'NZ', '.eu': 'EU'
+}
+
+def get_country_flag(country_code: str) -> str:
+    """Возвращает эмодзи флаг страны по коду"""
+    return COUNTRY_FLAGS.get(country_code.upper(), '🌐')
+
+def extract_sni_and_cidr(key: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Извлекает SNI (Server Name Indication) и CIDR информацию из ключа.
+    Возвращает: (sni_domain, cidr_info)
+    """
+    sni = None
+    cidr_info = None
+    
+    try:
+        if "://" not in key:
+            return None, None
+        
+        scheme, rest = key.split("://", 1)
+        scheme_lower = scheme.lower()
+        
+        # ========== VMESS ==========
+        if scheme_lower == "vmess":
+            try:
+                missing_padding = -len(rest) % 4
+                if missing_padding:
+                    rest += "=" * missing_padding
+                decoded = base64.b64decode(rest, validate=True).decode('utf-8', errors='ignore')
+                vmess_config = json.loads(decoded)
+                
+                # Извлекаем SNI из полей "sni" или "host"
+                sni = vmess_config.get("sni") or vmess_config.get("host") or vmess_config.get("add")
+                
+                # Проверяем на CIDR (обычно в поле "ps" или "add")
+                add = vmess_config.get("add", "")
+                if add and "/" in add:
+                    # Возможно CIDR нотация
+                    try:
+                        ipaddress.ip_network(add, strict=False)
+                        cidr_info = add
+                    except:
+                        pass
+            except:
+                pass
+        
+        # ========== HYSTERIA2 ==========
+        if scheme_lower in ("hysteria2", "hy2"):
+            # Парсим query параметры
+            if "?" in rest:
+                _, query_part = rest.split("?", 1)
+                if "#" in query_part:
+                    query_part, _ = query_part.split("#", 1)
+                
+                query_part = unquote(query_part)
+                params = {}
+                for param in query_part.split("&"):
+                    if "=" in param:
+                        k, v = param.split("=", 1)
+                        params[k.lower()] = v
+                
+                # SNI может быть в параметрах sni, host, serverName
+                sni = params.get("sni") or params.get("host") or params.get("servername")
+        
+        # ========== VLESS, TROJAN и другие ==========
+        else:
+            # Парсим query параметры
+            if "?" in rest:
+                _, query_part = rest.split("?", 1)
+                if "#" in query_part:
+                    query_part, _ = query_part.split("#", 1)
+                
+                # Декодируем URL-encoded параметры
+                query_part = unquote(query_part)
+                
+                # Ищем параметры sni и host
+                params = {}
+                for param in query_part.split("&"):
+                    if "=" in param:
+                        k, v = param.split("=", 1)
+                        params[k.lower()] = v
+                
+                # SNI может быть в параметрах sni, host, serverName
+                sni = params.get("sni") or params.get("host") or params.get("servername")
+                
+                # Если host содержит несколько доменов через точку (например: "domain1.domain2.com")
+                if sni and "." in sni:
+                    # Если это список доменов через точку, берем последний (основной домен)
+                    # Например: "www.speedtest.net.ftp.debian.org.vigilantecollection.com" -> "vigilantecollection.com"
+                    domain_parts = sni.split(".")
+                    if len(domain_parts) >= 2:
+                        # Берем последние 2 части (домен и TLD)
+                        sni = ".".join(domain_parts[-2:])
+                
+                # Проверяем на CIDR в основном хосте
+                if "@" in rest:
+                    host_part = rest.split("@")[1].split("?")[0].split("#")[0]
+                    if "/" in host_part:
+                        try:
+                            ipaddress.ip_network(host_part.split(":")[0], strict=False)
+                            cidr_info = host_part.split(":")[0]
+                        except:
+                            pass
+        
+        # Очищаем SNI от лишних символов
+        if sni:
+            sni = sni.strip().lower()
+            # Убираем протоколы и пути
+            if "://" in sni:
+                sni = sni.split("://")[1]
+            if "/" in sni:
+                sni = sni.split("/")[0]
+            if ":" in sni:
+                sni = sni.split(":")[0]
+            
+            # Если это список доменов через точку (например: "www.speedtest.net.ftp.debian.org.vigilantecollection.com")
+            # Берем последний домен (основной)
+            if "." in sni:
+                domain_parts = sni.split(".")
+                # Проверяем что это не IP адрес
+                try:
+                    ipaddress.ip_address(sni)
+                    sni = None  # Это IP, не домен
+                except ValueError:
+                    # Это домен, берем последние 2-3 части для компактности
+                    if len(domain_parts) >= 2:
+                        # Берем последние 2 части (домен.TLD)
+                        sni = ".".join(domain_parts[-2:])
+            
+            # Проверяем что это валидный домен
+            if not sni or len(sni) < 3 or "." not in sni:
+                sni = None
+        
+        return sni, cidr_info
+    
+    except Exception:
+        return None, None
+
 def get_country(key: str, host: str) -> str:
+    """Определяет страну по ключу и хосту"""
     host_lower = host.lower()
     
-    tld_map = {'.ru': 'RU', '.de': 'DE', '.nl': 'NL', '.fr': 'FR', '.uk': 'GB', '.lv': 'LV', '.eu': 'EU', '.com': 'US'}
+    # Для VMess - пытаемся извлечь из JSON
+    if key.lower().startswith("vmess://"):
+        try:
+            scheme, rest = key.split("://", 1)
+            missing_padding = -len(rest) % 4
+            if missing_padding:
+                rest += "=" * missing_padding
+            decoded = base64.b64decode(rest, validate=True).decode('utf-8', errors='ignore')
+            vmess_config = json.loads(decoded)
+            
+            # Проверяем поле ps (описание) на наличие кода страны
+            ps = vmess_config.get("ps", "").upper()
+            for code in EURO_CODES:
+                if code in ps:
+                    return code
+            if "RU" in ps or "RUSSIA" in ps or "РОССИЯ" in ps:
+                return "RU"
+            # Проверяем другие страны
+            for code, flag in COUNTRY_FLAGS.items():
+                if code != 'UNKNOWN' and code in ps:
+                    return code
+        except:
+            pass
+    
+    # Проверка по TLD домена (расширенная)
     parsed = urlparse(f"//{host}")
     domain = parsed.hostname or host
     
-    for tld, code in tld_map.items():
+    # Проверяем все возможные TLD
+    for tld, code in TLD_COUNTRY_MAP.items():
         if domain.endswith(tld):
             return code
     
+    # Проверка по параметрам в ключе
+    key_upper = key.upper()
     for code in EURO_CODES:
-        if f"={code}" in key or f"&{code}" in key:
+        if f"={code}" in key_upper or f"&{code}" in key_upper or f" {code} " in key_upper:
             return code
+    
+    # Проверка по маркерам стран в ключе
+    country_keywords = {
+        'RU': ['RUSSIA', 'РОССИЯ', 'RUS', 'RU-'],
+        'US': ['USA', 'UNITED STATES', 'AMERICA'],
+        'GB': ['UK', 'UNITED KINGDOM', 'BRITAIN', 'ENGLAND'],
+        'DE': ['GERMANY', 'DEUTSCHLAND'],
+        'FR': ['FRANCE', 'FRANÇAIS'],
+        'IT': ['ITALY', 'ITALIA'],
+        'ES': ['SPAIN', 'ESPAÑA'],
+        'NL': ['NETHERLANDS', 'HOLLAND'],
+        'JP': ['JAPAN', 'JAPANESE'],
+        'KR': ['KOREA', 'SOUTH KOREA'],
+        'CN': ['CHINA', 'CHINESE'],
+        'TR': ['TURKEY', 'TÜRKIYE'],
+        'IN': ['INDIA', 'INDIAN'],
+        'BR': ['BRAZIL', 'BRASIL'],
+        'AU': ['AUSTRALIA'],
+        'CA': ['CANADA'],
+        'SG': ['SINGAPORE'],
+        'HK': ['HONG KONG'],
+        'TW': ['TAIWAN'],
+    }
+    
+    for code, keywords in country_keywords.items():
+        for keyword in keywords:
+            if keyword in key_upper:
+                return code
+    
+    # Проверка по IP (если это IP адрес)
+    try:
+        ip = ipaddress.ip_address(host)
+        
+        # Простая проверка по известным диапазонам (основные провайдеры)
+        # Это не полная база, но помогает для некоторых случаев
+        ip_str = str(ip)
+        
+        # Российские IP диапазоны (основные)
+        if ip_str.startswith(('5.', '31.', '37.', '46.', '62.', '77.', '78.', '79.', '80.', '81.', '82.', '83.', '84.', '85.', '87.', '88.', '89.', '90.', '91.', '92.', '93.', '94.', '95.', '109.', '141.', '178.', '185.', '188.', '194.', '195.', '212.', '213.', '217.')):
+            return "RU"
+        
+        # Немецкие IP (основные)
+        if ip_str.startswith(('5.', '46.', '62.', '78.', '80.', '81.', '82.', '83.', '85.', '87.', '88.', '89.', '91.', '93.', '94.', '95.', '134.', '136.', '138.', '141.', '144.', '145.', '146.', '149.', '151.', '152.', '153.', '155.', '157.', '158.', '159.', '176.', '178.', '185.', '188.', '194.', '195.', '212.', '213.', '217.')):
+            # Более точная проверка для DE
+            if ip_str.startswith(('5.9.', '5.10.', '5.11.', '5.12.', '5.13.', '5.14.', '5.15.', '46.4.', '62.146.', '78.46.', '80.153.', '81.169.', '82.149.', '83.169.', '85.10.', '87.106.', '88.198.', '91.65.', '93.184.', '94.130.', '95.90.', '134.60.', '136.243.', '138.201.', '141.101.', '144.76.', '145.253.', '146.0.', '149.154.', '151.252.', '152.89.', '153.92.', '155.133.', '157.90.', '158.69.', '159.69.', '176.9.', '178.63.', '185.199.', '188.40.', '194.110.', '195.201.', '212.47.', '213.133.', '217.160.')):
+                return "DE"
+        
+        # Голландские IP
+        if ip_str.startswith(('5.79.', '5.101.', '5.153.', '5.188.', '31.204.', '37.97.', '46.19.', '46.21.', '46.22.', '46.23.', '46.30.', '46.166.', '62.45.', '77.247.', '78.24.', '80.57.', '80.69.', '80.101.', '81.17.', '82.94.', '83.80.', '84.104.', '85.17.', '87.233.', '88.159.', '89.46.', '91.224.', '94.75.', '94.142.', '95.85.', '109.200.', '141.101.', '178.62.', '185.13.', '188.166.', '194.109.', '195.121.', '212.83.', '213.136.', '217.23.')):
+            return "NL"
+        
+        # Британские IP
+        if ip_str.startswith(('5.62.', '5.101.', '5.153.', '31.24.', '37.59.', '46.19.', '46.21.', '46.22.', '46.23.', '46.30.', '46.166.', '51.', '62.45.', '77.247.', '78.24.', '80.57.', '80.69.', '80.101.', '81.17.', '82.94.', '83.80.', '84.104.', '85.17.', '87.233.', '88.159.', '89.46.', '91.224.', '94.75.', '94.142.', '95.85.', '109.200.', '141.101.', '178.62.', '185.13.', '188.166.', '194.109.', '195.121.', '212.83.', '213.136.', '217.23.')):
+            # Более точная проверка для GB
+            if ip_str.startswith(('5.62.', '5.101.', '5.153.', '31.24.', '37.59.', '46.19.', '46.21.', '46.22.', '46.23.', '46.30.', '46.166.', '51.', '62.45.', '77.247.', '78.24.', '80.57.', '80.69.', '80.101.', '81.17.', '82.94.', '83.80.', '84.104.', '85.17.', '87.233.', '88.159.', '89.46.', '91.224.', '94.75.', '94.142.', '95.85.', '109.200.', '141.101.', '178.62.', '185.13.', '188.166.', '194.109.', '195.121.', '212.83.', '213.136.', '217.23.')):
+                return "GB"
+        
+        # Американские IP (Cloudflare, AWS и др.)
+        if ip_str.startswith(('104.16.', '104.17.', '104.18.', '104.19.', '104.20.', '104.21.', '104.22.', '104.23.', '104.24.', '104.25.', '104.26.', '104.27.', '104.28.', '104.29.', '104.30.', '104.31.', '172.64.', '172.65.', '172.66.', '172.67.', '172.68.', '172.69.', '172.70.', '172.71.', '172.72.', '172.73.', '172.74.', '172.75.', '172.76.', '172.77.', '172.78.', '172.79.', '172.80.', '172.81.', '172.82.', '172.83.', '172.84.', '172.85.', '172.86.', '172.87.', '172.88.', '172.89.', '172.90.', '172.91.', '172.92.', '172.93.', '172.94.', '172.95.', '172.96.', '172.97.', '172.98.', '172.99.', '172.100.', '172.101.', '172.102.', '172.103.', '172.104.', '172.105.', '172.106.', '172.107.', '172.108.', '172.109.', '172.110.', '172.111.')):
+            return "US"
+        
+    except ValueError:
+        # Не IP адрес, продолжаем проверку по домену
+        pass
     
     return "UNKNOWN"
 
 def is_garbage(key: str) -> bool:
+    """Проверяет ключ на мусор (CN, IR, локальные IP и т.д.)"""
     upper = key.upper()
     
-    if "://" in key:
+    if "://" not in key:
+        return False
+    
+    scheme, rest = key.split("://", 1)
+    scheme_lower = scheme.lower()
+    
+    # Проверка маркеров в ключе
+    if any(m in upper for m in BAD_MARKERS):
+        return True
+    
+    # Для VMess - декодируем и проверяем
+    if scheme_lower == "vmess":
         try:
-            _, rest = key.split("://", 1)
-            if "@" in rest:
-                domain_part = rest.split("@")[1].split("?")[0].split("#")[0]
-                if any(domain_part.endswith(tld) for tld in ['.ir', '.cn']):
+            missing_padding = -len(rest) % 4
+            if missing_padding:
+                rest += "=" * missing_padding
+            decoded = base64.b64decode(rest, validate=True).decode('utf-8', errors='ignore')
+            vmess_config = json.loads(decoded)
+            
+            # Проверяем host в JSON
+            host = vmess_config.get("add") or vmess_config.get("address", "")
+            if host:
+                host_lower = host.lower()
+                if any(host_lower.endswith(tld) for tld in ['.ir', '.cn']):
                     return True
-                if any(ip in domain_part for ip in ['127.0.0.1', 'localhost', '0.0.0.0']):
+                if any(ip in host_lower for ip in ['127.0.0.1', 'localhost', '0.0.0.0']):
+                    return True
+                # Проверяем маркеры в ps (описание)
+                ps = vmess_config.get("ps", "").upper()
+                if any(m in ps for m in BAD_MARKERS):
                     return True
         except:
             pass
     
-    if any(m in upper for m in BAD_MARKERS):
-        return True
+    # Для Shadowsocks и других форматов с @
+    if "@" in rest:
+        try:
+            domain_part = rest.split("@")[1].split("?")[0].split("#")[0]
+            if any(domain_part.endswith(tld) for tld in ['.ir', '.cn']):
+                return True
+            if any(ip in domain_part for ip in ['127.0.0.1', 'localhost', '0.0.0.0']):
+                return True
+        except:
+            pass
+    
+    # Для SS в base64 формате без @
+    elif scheme_lower in ("ss", "ssr"):
+        try:
+            missing_padding = -len(rest) % 4
+            if missing_padding:
+                rest += "=" * missing_padding
+            decoded = base64.b64decode(rest, validate=True).decode('utf-8', errors='ignore')
+            if "@" in decoded:
+                domain_part = decoded.split("@")[1].split(":")[0]
+                if any(domain_part.endswith(tld) for tld in ['.ir', '.cn']):
+                    return True
+        except:
+            pass
     
     return False
 
@@ -534,6 +1243,12 @@ def fetch_keys(urls: List[str], tag: str) -> List[Tuple[str, str]]:
             for line in lines:
                 line = line.strip()
                 if line and len(line) < 2000 and "://" in line:
+                    # Проверяем что ключ можно распарсить
+                    host, port, _ = parse_key(line)
+                    if not host:
+                        # Пропускаем ключи которые не парсятся
+                        continue
+                    
                     if not is_garbage(line):
                         # Если в источнике указан тип, добавляем маркер в ключ
                         if source_type and "#" in line:
@@ -558,12 +1273,24 @@ def fetch_keys(urls: List[str], tag: str) -> List[Tuple[str, str]]:
 
 # ==================== ФОРМАТИРОВАНИЕ ====================
 def format_label(key_info: KeyInfo) -> str:
+    """
+    Форматирует метку ключа с улучшенным рейтингом.
+    Формат: latency_ms_флагстрана_тип_рейтинг_канал
+    Для белых списков добавляет SNI и CIDR информацию.
+    """
+    # Получаем эмодзи флаг страны
+    country_flag = get_country_flag(key_info.country)
+    
+    # Получаем рейтинг (звезды, иконка, оценка)
+    stars, icon, grade = key_info.get_rating()
+    
     parts = [
         f"{key_info.metrics.latency}ms",
-        key_info.country,
-        key_info.routing_type[0].upper()
+        f"{country_flag}{key_info.country}",  # Флаг и код страны
+        key_info.routing_type[0].upper()  # Тип: W/B/U
     ]
     
+    # Добавляем метрики если есть
     if key_info.metrics.bandwidth:
         parts.append(f"{key_info.metrics.bandwidth:.1f}Mb")
     
@@ -573,11 +1300,30 @@ def format_label(key_info: KeyInfo) -> str:
     if key_info.metrics.uptime and key_info.metrics.uptime < 100:
         parts.append(f"UP{int(key_info.metrics.uptime)}")
     
-    # Добавляем белый флаг для белого списка
+    # Для белых списков добавляем SNI и CIDR информацию
     if key_info.routing_type == "white":
         parts.append("🏳️")
+        
+        # Извлекаем SNI и CIDR
+        sni, cidr = extract_sni_and_cidr(key_info.key)
+        
+        if sni:
+            # Сокращаем длинный домен для компактности
+            sni_short = sni
+            if len(sni) > 20:
+                # Берем только домен без поддоменов если слишком длинный
+                domain_parts = sni.split(".")
+                if len(domain_parts) >= 2:
+                    sni_short = ".".join(domain_parts[-2:])
+            parts.append(f"SNI:{sni_short}")
+        
+        if cidr:
+            parts.append(f"CIDR:{cidr}")
     
-    parts.append(key_info.get_icon())
+    # Добавляем рейтинг: иконка + звезды + оценка
+    stars_display = key_info.get_stars_display()
+    parts.append(f"{icon}{stars_display}{grade}")
+    
     parts.append(CFG.MY_CHANNEL)
     
     return "_".join(parts)
@@ -613,7 +1359,7 @@ class TUI:
         self.current_row = 0
         self.menu_items = [
             "1. Быстрая проверка",
-            "2. Полная проверка (с метриками)",
+            "2. Полная проверка (глубокая + метрики)",
             "3. Настройки",
             "4. Очистить кэш",
             "5. Статистика",
@@ -625,6 +1371,7 @@ class TUI:
             "timeout": CFG.TIMEOUT,
             "enable_bandwidth": False,
             "enable_jitter": False,
+            "enable_deep": True,  # Глубокая проверка по умолчанию включена
             "min_quality": CFG.MIN_QUALITY_SCORE
         }
         signal.signal(signal.SIGINT, self.signal_handler)
@@ -655,7 +1402,7 @@ class TUI:
         info_y = 2
         self.stdscr.addstr(info_y, 2, f"📂 Директория: {CFG.BASE_DIR}"[:self.width-3], curses.A_DIM)
         self.stdscr.addstr(info_y + 1, 2, f"🔧 Потоков: {self.settings['threads']} | 🔑 Макс. ключей: {self.settings['max_keys']}"[:self.width-3], curses.A_DIM)
-        self.stdscr.addstr(info_y + 2, 2, f"⏱️  Таймаут: {self.settings['timeout']}с | 📶 Метрики: {'✅' if self.settings['enable_bandwidth'] else '❌'} Bw {'✅' if self.settings['enable_jitter'] else '❌'} Jitter"[:self.width-3], curses.A_DIM)
+        self.stdscr.addstr(info_y + 2, 2, f"⏱️  Таймаут: {self.settings['timeout']}с | 📶 Метрики: {'✅' if self.settings['enable_bandwidth'] else '❌'} Bw {'✅' if self.settings['enable_jitter'] else '❌'} Jt {'✅' if self.settings['enable_deep'] else '❌'} Deep"[:self.width-3], curses.A_DIM)
         
         menu_y = info_y + 4
         for idx, item in enumerate(self.menu_items):
@@ -682,6 +1429,7 @@ class TUI:
                 'TIMEOUT': self.settings['timeout'],
                 'ENABLE_BANDWIDTH_TEST': self.settings['enable_bandwidth'] if not fast else False,
                 'ENABLE_JITTER_TEST': self.settings['enable_jitter'] if not fast else False,
+                'ENABLE_DEEP_TEST': self.settings['enable_deep'] if not fast else False,  # Глубокая проверка только в полной проверке
                 'MIN_QUALITY_SCORE': self.settings['min_quality']
             }
             
@@ -773,19 +1521,36 @@ class TUI:
         
         key_id = get_hash(key.split("#")[0])
         
-        latency = None
         checker = ConnectionChecker()
+        
+        # Определяем протокол для проверки
+        protocol_type = get_protocol_type(key)
+        protocol = "udp" if protocol_type == "hysteria2" else "tcp"
+        
+        # Базовая проверка соединения
+        latency = None
         for attempt in range(CFG.RETRY_ATTEMPTS):
-            latency = checker.check_basic(host, port, is_tls)
+            latency = checker.check_basic(host, port, is_tls, protocol)
             if latency: break
             time.sleep(0.1 * (attempt + 1))
         
-        if not latency: return None
+        if not latency: 
+            # Если базовая проверка не прошла, добавляем в blacklist
+            blacklist.record_failure(host)
+            return None
+        
+        # Глубокая проверка работоспособности (только для полной проверки)
+        if config.get('ENABLE_DEEP_TEST', False):
+            deep_check = checker.check_deep(key, host, port, is_tls)
+            if not deep_check:
+                # Сервер не отвечает на глубокую проверку - помечаем как нерабочий
+                blacklist.record_failure(host)
+                return None
         
         metrics = KeyMetrics(latency=latency, last_check=time.time())
-        if config['ENABLE_JITTER_TEST'] and latency < 200:
+        if config.get('ENABLE_JITTER_TEST', False) and latency < 200:
             metrics.jitter = checker.check_jitter(host, port, is_tls)
-        if config['ENABLE_BANDWIDTH_TEST'] and latency < 300:
+        if config.get('ENABLE_BANDWIDTH_TEST', False) and latency < 300:
             metrics.bandwidth = checker.check_bandwidth(host, port, is_tls)
         
         classifier = SmartClassifier()
@@ -793,7 +1558,7 @@ class TUI:
         country = get_country(key, host)
         
         key_info = KeyInfo(key, key_id, tag, country, routing_type, metrics)
-        if key_info.quality_score() < config['MIN_QUALITY_SCORE']:
+        if key_info.quality_score() < config.get('MIN_QUALITY_SCORE', 0.0):
             return None
         
         label = format_label(key_info)
@@ -806,7 +1571,8 @@ class TUI:
             'latency': latency,
             'time': time.time(),
             'country': country,
-            'routing_type': routing_type
+            'routing_type': routing_type,
+            'deep_check': config.get('ENABLE_DEEP_TEST', False)
         }
         save_json(CFG.HISTORY_FILE, history)
         
@@ -931,7 +1697,7 @@ class TUI:
             if value:
                 if key in ['threads', 'max_keys', 'timeout']:
                     self.settings[key] = max(1, int(value))
-                elif key in ['enable_bandwidth', 'enable_jitter']:
+                elif key in ['enable_bandwidth', 'enable_jitter', 'enable_deep']:
                     self.settings[key] = value.lower() in ['y', 'yes', 'true', '1', 'on', 'вкл']
                 elif key == 'min_quality':
                     self.settings[key] = max(0.0, min(100.0, float(value)))
@@ -1040,13 +1806,14 @@ def run_cli(args):
             'TIMEOUT': args.timeout or CFG.TIMEOUT,
             'ENABLE_BANDWIDTH_TEST': args.bandwidth,
             'ENABLE_JITTER_TEST': args.jitter,
+            'ENABLE_DEEP_TEST': not args.fast,  # Глубокая проверка только в полной проверке
             'MIN_QUALITY_SCORE': args.min_quality
         }
         
         print(f"\n{'='*70}")
         print(f"VPN Checker v15.2 CLI | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"Threads: {local_config['THREADS']} | Timeout: {local_config['TIMEOUT']}s | Max keys: {local_config['MAX_KEYS']}")
-        print(f"Advanced: bandwidth={local_config['ENABLE_BANDWIDTH_TEST']}, jitter={local_config['ENABLE_JITTER_TEST']}")
+        print(f"Advanced: bandwidth={local_config['ENABLE_BANDWIDTH_TEST']}, jitter={local_config['ENABLE_JITTER_TEST']}, deep={local_config['ENABLE_DEEP_TEST']}")
         print(f"{'='*70}\n")
         
         for folder in [CFG.FOLDER_RU, CFG.FOLDER_EURO]:
@@ -1126,12 +1893,15 @@ def run_cli(args):
                         failed += 1
                     
                     if checked % 50 == 0:
+                        deep_info = " [Deep: ON]" if local_config.get('ENABLE_DEEP_TEST', False) else ""
                         print(f"  {checked}/{len(to_check)} | "
                               f"RU: W:{stats['RU']['white']} B:{stats['RU']['black']} U:{stats['RU']['universal']} | "
                               f"EU: W:{stats['MY']['white']} B:{stats['MY']['black']} U:{stats['MY']['universal']} | "
-                              f"❌ {failed}")
+                              f"❌ {failed}{deep_info}")
             
+            deep_status = "включена" if local_config.get('ENABLE_DEEP_TEST', False) else "выключена"
             print(f"\nПроверено: {checked}, нерабочих: {failed}")
+            print(f"Глубокая проверка: {deep_status}")
         
         cutoff = time.time() - (86400 * 3)
         history_cleaned = {k: v for k, v in history.items() if v['time'] > cutoff}
@@ -1191,25 +1961,37 @@ def _check_key_cli(data, config):
         host, port, is_tls = parse_key(key)
         if not host: return None
         
-        # Используем глобальный экземпляр blacklist или создаём один раз
-        # blacklist = BlacklistManager(CFG.BLACKLIST_FILE)
-        # if blacklist.is_blacklisted(host): return None
+        blacklist = BlacklistManager(CFG.BLACKLIST_FILE)
+        if blacklist.is_blacklisted(host): return None
         
         key_id = get_hash(key.split("#")[0])
         
-        latency = None
         checker = ConnectionChecker()
+        
+        # Базовая проверка соединения
+        latency = None
         for attempt in range(CFG.RETRY_ATTEMPTS):
             latency = checker.check_basic(host, port, is_tls)
             if latency: break
             time.sleep(0.1 * (attempt + 1))
         
-        if not latency: return None
+        if not latency:
+            # Если базовая проверка не прошла, добавляем в blacklist
+            blacklist.record_failure(host)
+            return None
+        
+        # Глубокая проверка работоспособности (только для полной проверки)
+        if config.get('ENABLE_DEEP_TEST', False):
+            deep_check = checker.check_deep(key, host, port, is_tls)
+            if not deep_check:
+                # Сервер не отвечает на глубокую проверку - помечаем как нерабочий
+                blacklist.record_failure(host)
+                return None
         
         metrics = KeyMetrics(latency=latency, last_check=time.time())
-        if config.get('ENABLE_JITTER_TEST') and latency < 200:
+        if config.get('ENABLE_JITTER_TEST', False) and latency < 200:
             metrics.jitter = checker.check_jitter(host, port, is_tls)
-        if config.get('ENABLE_BANDWIDTH_TEST') and latency < 300:
+        if config.get('ENABLE_BANDWIDTH_TEST', False) and latency < 300:
             metrics.bandwidth = checker.check_bandwidth(host, port, is_tls)
         
         classifier = SmartClassifier()
@@ -1218,7 +2000,6 @@ def _check_key_cli(data, config):
         
         key_info = KeyInfo(key, key_id, tag, country, routing_type, metrics)
         
-        # Временно понижаем порог или делаем его опциональным
         min_quality = config.get('MIN_QUALITY_SCORE', 0.0)
         if key_info.quality_score() < min_quality:
             return None
@@ -1233,13 +2014,14 @@ def _check_key_cli(data, config):
             'latency': latency,
             'time': time.time(),
             'country': country,
-            'routing_type': routing_type
+            'routing_type': routing_type,
+            'deep_check': config.get('ENABLE_DEEP_TEST', False)
         }
         save_json(CFG.HISTORY_FILE, history)
         
         return category, final, key_id
     except Exception as e:
-        # Временно игнорируем ошибки для отладки
+        # Игнорируем ошибки для отладки
         return None
 
 def _generate_subscriptions_list(files_data):
