@@ -67,8 +67,8 @@ class Config:
 
 CFG = Config()
 
-# Источники (без пробелов)
-URLS_RU = [
+# Источники (единый массив, распределение по тегам происходит автоматически)
+URLS = [
     "https://raw.githubusercontent.com/zieng2/wl/main/vless.txt",
     "https://raw.githubusercontent.com/LowiKLive/BypassWhitelistRu/refs/heads/main/WhiteList-Bypass_Ru.txt",
     "https://raw.githubusercontent.com/zieng2/wl/main/vless_universal.txt",
@@ -82,9 +82,6 @@ URLS_RU = [
     "https://raw.githubusercontent.com/Mosifree/-FREE2CONFIG/refs/heads/main/Reality",
     "https://raw.githubusercontent.com/STR97/STRUGOV/refs/heads/main/STR.BYPASS",
     "https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/refs/heads/main/githubmirror/26.txt",
-]
-
-URLS_MY = [
     "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/refs/heads/main/githubmirror/new/all_new.txt",
     "https://raw.githubusercontent.com/crackbest/V2ray-Config/refs/heads/main/config.txt",
     "https://raw.githubusercontent.com/miladtahanian/multi-proxy-config-fetcher/refs/heads/main/configs/proxy_configs.txt",
@@ -93,11 +90,106 @@ URLS_MY = [
     "https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/refs/heads/main/githubmirror/22.txt",
 ]
 
+def detect_tag_from_url(url: str) -> str:
+    """
+    Автоматически определяет тег (RU/MY) на основе URL.
+    RU: если в URL есть маркеры России (russia, rus, ru, mobile, cable, whitelist)
+    MY: иначе (европейские/международные источники)
+    """
+    url_lower = url.lower()
+    
+    # Маркеры российских источников
+    ru_markers = [
+        "russia", "rus", "/ru/", "-ru-", "_ru_", "russian",
+        "mobile", "cable", "whitelist", "bypass", "reality",
+        "vless-rus", "rus-mobile", "rus-cable"
+    ]
+    
+    # Проверяем наличие маркеров России
+    for marker in ru_markers:
+        if marker in url_lower:
+            return "RU"
+    
+    # По умолчанию - европейские/международные источники
+    return "MY"
+
 # Маркеры
 EURO_CODES = {"NL", "DE", "FI", "GB", "FR", "SE", "PL", "CZ", "AT", "CH", "IT", "ES", "NO", "DK", "BE", "IE", "LU", "EE", "LV", "LT", "RO", "BG", "HR", "SI", "SK", "HU", "PT", "GR", "CY", "MT"}
 BAD_MARKERS = ["CN", "IR", "KR", "BR", "IN", "RELAY", "POOL", "🇨🇳", "🇮🇷", "🇰🇷", "TR", "SA", "AE"]
 WHITE_MARKERS = ["white", "whitelist", "bypass", "россия", "russia", "mobile", "cable", "госуслуг", "government", "banking", "bank", "RU", "МТС", "Beeline"]
 BLACK_MARKERS = ["black", "blacklist", "full", "global", "universal", "all", "vpn", "proxy", "tunnel", "freedom"]
+
+# Официальный белый список доменов (разрешенные сервисы при отключении интернета)
+WHITE_LIST_DOMAINS = {
+    # Госуслуги и государственные сервисы
+    'gosuslugi.ru', 'esia.gosuslugi.ru', 'www.gosuslugi.ru',
+    'pos.gosuslugi.ru', 'lk.gosuslugi.ru', 'kabinet.gosuslugi.ru',
+    
+    # Банки
+    'sberbank.ru', 'www.sberbank.ru', 'online.sberbank.ru',
+    'alfabank.ru', 'www.alfabank.ru', 'click.alfabank.ru',
+    'vtb.ru', 'www.vtb.ru', 'online.vtb.ru',
+    'tinkoff.ru', 'www.tinkoff.ru', 'id.tinkoff.ru',
+    'gazprombank.ru', 'www.gazprombank.ru',
+    
+    # Операторы связи
+    'beeline.ru', 'my.beeline.ru', 'www.beeline.ru',
+    'megafon.ru', 'lk.megafon.ru', 'www.megafon.ru',
+    'mts.ru', 'login.mts.ru', 'www.mts.ru',
+    'rostelecom.ru', 'lk.rt.ru', 'www.rostelecom.ru',
+    
+    # Почта России
+    'pochta.ru', 'www.pochta.ru', 'tracking.pochta.ru',
+    
+    # Маркетплейсы
+    'ozon.ru', 'www.ozon.ru',
+    'wildberries.ru', 'www.wildberries.ru',
+    'market.yandex.ru', 'beru.ru',
+    
+    # Соцсети
+    'vk.com', 'www.vk.com', 'm.vk.com', 'id.vk.com',
+    'ok.ru', 'www.ok.ru', 'm.ok.ru',
+    'my.mail.ru', 'mail.ru',
+    
+    # Яндекс сервисы
+    'yandex.ru', 'www.yandex.ru', 'ya.ru',
+    'passport.yandex.ru', 'music.yandex.ru',
+    'maps.yandex.ru', 'taxi.yandex.ru',
+    'eda.yandex.ru', 'lavka.yandex.ru',
+    
+    # СМИ
+    'kp.ru', 'www.kp.ru',
+    'ria.ru', 'www.ria.ru',
+    'rbc.ru', 'www.rbc.ru',
+    'lenta.ru', 'www.lenta.ru',
+    'tass.ru', 'www.tass.ru',
+    
+    # Развлечения
+    'rutube.ru', 'www.rutube.ru',
+    'okko.tv', 'www.okko.tv',
+    'ivi.ru', 'www.ivi.ru',
+    'kinopoisk.ru', 'www.kinopoisk.ru',
+    
+    # Транспорт
+    'rzd.ru', 'www.rzd.ru', 'pass.rzd.ru',
+    'tutu.ru', 'www.tutu.ru',
+    '2gis.ru', 'www.2gis.ru',
+    
+    # Доставка
+    'magnit.ru', 'www.magnit.ru',
+    'perekrestok.ru', 'www.perekrestok.ru',
+    'pyaterochka.ru', 'www.pyaterochka.ru',
+    'vkusvill.ru', 'www.vkusvill.ru',
+    
+    # Другие популярные домены
+    'avito.ru', 'www.avito.ru',
+    'hh.ru', 'www.hh.ru',
+    'gismeteo.ru', 'www.gismeteo.ru',
+    
+    # Дополнительные распространённые поддомены
+    'cdn.jsdelivr.net', 'cdnjs.cloudflare.com',
+    'telewebion.com', 'cdn.ir',
+}
 
 # ==================== УТИЛИТЫ ====================
 class FileLock:
@@ -151,7 +243,7 @@ def get_hash(key: str) -> str:
 def extract_ping(key_str: str) -> int:
     """
     Извлекает значение для сортировки из метки.
-    Теперь использует latency из метрик или статус YouTube.
+    Использует latency из метрик.
     """
     try:
         label = key_str.split("#")[-1]
@@ -159,13 +251,8 @@ def extract_ping(key_str: str) -> int:
         ping_part = re.search(r'(\d+)ms', label)
         if ping_part:
             return int(ping_part.group(1))
-        # Если нет пинга, проверяем статус YouTube (✅YT = 0, ❌YT = 999, ⏳YT = 500)
-        if "✅YT" in label:
-            return 0  # YouTube доступен - приоритет
-        elif "❌YT" in label:
-            return 999  # YouTube недоступен - низкий приоритет
-        else:
-            return 500  # Не проверено
+        # Если нет пинга, возвращаем среднее значение
+        return 500
     except:
         return 999999
 
@@ -176,7 +263,6 @@ class KeyMetrics:
     bandwidth: Optional[float] = None
     jitter: Optional[int] = None
     uptime: Optional[float] = None
-    youtube_accessible: Optional[bool] = None  # Доступность YouTube
     last_check: float = 0
     check_count: int = 0
     
@@ -380,218 +466,6 @@ class Analytics:
 
 # ==================== ПРОВЕРКА СОЕДИНЕНИЯ ====================
 class ConnectionChecker:
-    @staticmethod
-    def check_youtube_access(key: Optional[str] = None) -> Tuple[Optional[int], bool]:
-        """
-        Проверяет доступность YouTube.
-        Если key предоставлен - проверяет через xray VPN соединение.
-        Иначе - проверяет через прямой HTTP запрос.
-        
-        Возвращает: (latency_ms, is_accessible)
-        """
-        # Если ключ предоставлен - проверяем через xray
-        if key:
-            return ConnectionChecker.check_youtube_via_xray(key)
-        
-        # Прямая проверка (без VPN)
-        try:
-            start = time.time()
-            response = requests.head(
-                "https://www.youtube.com",
-                timeout=CFG.TIMEOUT,
-                allow_redirects=True,
-                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-            )
-            latency = int((time.time() - start) * 1000)
-            is_accessible = response.status_code in (200, 301, 302, 303, 307, 308)
-            return latency if latency >= 0 else 1, is_accessible
-        except requests.exceptions.Timeout:
-            return None, False
-        except requests.exceptions.ConnectionError:
-            return None, False
-        except Exception:
-            return None, False
-    
-    @staticmethod
-    def _find_free_port(start_port: int = 10808, max_attempts: int = 10) -> int:
-        """Находит свободный порт для SOCKS прокси"""
-        for i in range(max_attempts):
-            port = start_port + i
-            try:
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.bind(('127.0.0.1', port))
-                    return port
-            except OSError:
-                continue
-        return start_port  # Возвращаем начальный порт если не нашли свободный
-    
-    @staticmethod
-    def check_youtube_via_xray(key: str) -> Tuple[Optional[int], bool]:
-        """
-        Проверяет доступность YouTube через xray VPN соединение.
-        Создает временный конфиг xray, запускает его, проверяет YouTube через SOCKS прокси.
-        """
-        config_path = None
-        xray_process = None
-        socks_port = None
-        
-        try:
-            # Конвертируем ключ в конфигурацию xray
-            config = ConnectionChecker._key_to_xray_config(key)
-            if not config:
-                # Неподдерживаемый протокол или ошибка парсинга - не можем проверить через xray
-                # Возвращаем None, чтобы использовать базовую проверку
-                return None, None
-            
-            # Находим свободный порт для SOCKS
-            socks_port = ConnectionChecker._find_free_port(CFG.XRAY_SOCKS_PORT)
-            config["inbounds"][0]["port"] = socks_port
-            
-            # Создаем временный файл конфига
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-                json.dump(config, f, indent=2, ensure_ascii=False)
-                config_path = f.name
-            
-            # Проверяем что xray доступен
-            try:
-                result = subprocess.run([CFG.XRAY_PATH, "-version"], 
-                             stdout=subprocess.PIPE, 
-                             stderr=subprocess.PIPE, 
-                             timeout=2)
-                if result.returncode != 0:
-                    # xray не работает - используем прямую проверку
-                    return ConnectionChecker.check_youtube_access(None)
-            except (FileNotFoundError, subprocess.TimeoutExpired):
-                # xray не найден - используем прямую проверку
-                return ConnectionChecker.check_youtube_access(None)
-            
-            # Запускаем xray в фоне
-            xray_process = subprocess.Popen(
-                [CFG.XRAY_PATH, "-config", config_path],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                preexec_fn=os.setsid if hasattr(os, 'setsid') else None
-            )
-            
-            # Ждем чтобы xray запустился и проверяем доступность SOCKS порта
-            max_wait = 5  # Максимальное время ожидания запуска xray
-            wait_interval = 0.3
-            waited = 0
-            socks_ready = False
-            
-            while waited < max_wait:
-                if xray_process.poll() is not None:
-                    # xray завершился с ошибкой - не можем проверить
-                    return None, False
-                
-                # Проверяем доступность SOCKS порта
-                try:
-                    test_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    test_sock.settimeout(0.5)
-                    result = test_sock.connect_ex(('127.0.0.1', socks_port))
-                    test_sock.close()
-                    if result == 0:
-                        socks_ready = True
-                        break
-                except:
-                    pass
-                
-                time.sleep(wait_interval)
-                waited += wait_interval
-            
-            if not socks_ready or xray_process.poll() is not None:
-                # SOCKS порт не стал доступен или xray завершился - не можем проверить через xray
-                # Возвращаем None, чтобы использовать базовую проверку
-                return None, None
-            
-            # Проверяем доступность YouTube через SOCKS прокси
-            start = time.time()
-            original_socket = None
-            try:
-                # Используем requests с SOCKS прокси через PySocks
-                try:
-                    import socks
-                    import socket as socket_module
-                    # Сохраняем оригинальный socket
-                    original_socket = socket_module.socket
-                    # Устанавливаем SOCKS прокси
-                    socks.set_default_proxy(socks.SOCKS5, "127.0.0.1", socks_port)
-                    socket_module.socket = socks.socksocket
-                except ImportError:
-                    # PySocks не установлен - используем прямую проверку
-                    return ConnectionChecker.check_youtube_access(None)
-                
-                try:
-                    # Проверяем несколько раз для надежности
-                    is_accessible = False
-                    for attempt in range(2):
-                        try:
-                            response = requests.head(
-                                "https://www.youtube.com",
-                                timeout=CFG.TIMEOUT + 3,
-                                allow_redirects=True,
-                                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-                            )
-                            if response.status_code in (200, 301, 302, 303, 307, 308):
-                                is_accessible = True
-                                break
-                        except:
-                            if attempt == 1:
-                                # Последняя попытка не удалась
-                                is_accessible = False
-                            time.sleep(0.5)
-                    
-                    latency = int((time.time() - start) * 1000)
-                finally:
-                    # Восстанавливаем оригинальный socket
-                    if original_socket:
-                        try:
-                            socket_module.socket = original_socket
-                            socks.set_default_proxy()
-                        except:
-                            pass
-                
-                return latency if latency >= 0 else 1, is_accessible
-                
-            except Exception as e:
-                # Восстанавливаем оригинальный socket
-                if original_socket:
-                    try:
-                        import socket as socket_module
-                        socket_module.socket = original_socket
-                        socks.set_default_proxy()
-                    except:
-                        pass
-                # Ошибка при проверке через SOCKS - не можем проверить через xray
-                # Возвращаем None, чтобы использовать базовую проверку
-                return None, None
-                
-        except Exception as e:
-            # Ошибка при проверке через xray - не можем проверить через xray
-            # Возвращаем None, чтобы использовать базовую проверку
-            return None, None
-        finally:
-            # Останавливаем xray
-            if xray_process:
-                try:
-                    if hasattr(os, 'killpg'):
-                        os.killpg(os.getpgid(xray_process.pid), signal.SIGTERM)
-                    else:
-                        xray_process.terminate()
-                    try:
-                        xray_process.wait(timeout=3)
-                    except subprocess.TimeoutExpired:
-                        xray_process.kill()
-                except:
-                    pass
-            
-            # Удаляем временный конфиг
-            if config_path:
-                try:
-                    os.unlink(config_path)
-                except:
-                    pass
-    
     @staticmethod
     def _key_to_xray_config(key: str) -> Optional[dict]:
         """
@@ -1672,34 +1546,140 @@ def is_garbage(key: str) -> bool:
     return False
 
 # ==================== КЛАССИФИКАЦИЯ ====================
+def is_domain_in_white_list(sni_domain: Optional[str]) -> bool:
+    """
+    Проверяет, соответствует ли SNI домен доменам из белого списка.
+    Учитывает поддомены (например, m.vk.com соответствует vk.com).
+    """
+    if not sni_domain:
+        return False
+    
+    sni_domain = sni_domain.lower().strip()
+    
+    # Прямое совпадение
+    if sni_domain in WHITE_LIST_DOMAINS:
+        return True
+    
+    # Проверка поддоменов (например, m.vk.com -> vk.com)
+    domain_parts = sni_domain.split('.')
+    if len(domain_parts) >= 2:
+        # Проверяем основной домен (последние 2 части)
+        main_domain = '.'.join(domain_parts[-2:])
+        if main_domain in WHITE_LIST_DOMAINS:
+            return True
+        
+        # Проверяем все возможные поддомены
+        for i in range(len(domain_parts) - 1):
+            subdomain = '.'.join(domain_parts[i:])
+            if subdomain in WHITE_LIST_DOMAINS:
+                return True
+    
+    return False
+
 class SmartClassifier:
-    """Классифицирует ключи на white/black/universal списки"""
+    """
+    Классифицирует ключи на white/black/universal списки.
+    
+    Логика:
+    - white: только протоколы с SNI, которые маскируются под домены из белого списка
+    - black: серверы которые обходят блокировки, но не подходят для белого списка
+    - universal: все рабочие серверы (и white и black)
+    """
     
     def predict(self, key: str) -> str:
         """
         Возвращает тип списка: 'white', 'black' или 'universal'
-        """
-        key_upper = key.upper()
-        key_lower = key.lower()
         
-        # Преобразуем маркеры в верхний регистр для сравнения
+        Белый список: только если протокол поддерживает SNI И SNI соответствует доменам из белого списка
+        Черный список: если протокол поддерживает SNI но SNI не в белом списке, или протокол не поддерживает SNI
+        Универсальный: все рабочие серверы (по умолчанию)
+        """
+        # Определяем тип протокола
+        protocol_type = get_protocol_type(key)
+        
+        # Shadowsocks (SS/SSR) не поддерживает SNI - не может быть в белом списке
+        if protocol_type == "shadowsocks":
+            # SS может быть только в черном или универсальном списке
+            key_upper = key.upper()
+            black_markers_upper = [m.upper() for m in BLACK_MARKERS]
+            if any(marker in key_upper for marker in black_markers_upper):
+                return "black"
+            return "universal"
+        
+        # Извлекаем SNI из ключа
+        sni, _ = extract_sni_and_cidr(key)
+        
+        # Проверяем соответствие SNI белому списку
+        if sni and is_domain_in_white_list(sni):
+            # SNI соответствует белому списку - это белый список
+            return "white"
+        
+        # Если протокол поддерживает SNI (VLESS, VMess, Trojan с TLS), но SNI не в белом списке
+        # или SNI отсутствует - это черный список (обходит блокировки, но не подходит для белого)
+        if protocol_type in ("vless", "vmess", "trojan"):
+            # Проверяем есть ли TLS (для VLESS и VMess может быть без TLS)
+            _, _, is_tls = parse_key(key)
+            if is_tls or sni:  # Если есть TLS или SNI указан - протокол может маскироваться
+                key_upper = key.upper()
+                black_markers_upper = [m.upper() for m in BLACK_MARKERS]
+                white_markers_upper = [m.upper() for m in WHITE_MARKERS]
+                
+                # Если есть явные маркеры черного списка - черный список
+                if any(marker in key_upper for marker in black_markers_upper):
+                    return "black"
+                
+                # Если есть маркеры белого списка но SNI не соответствует - черный список
+                if any(marker in key_upper for marker in white_markers_upper):
+                    return "black"
+                
+                # Если SNI указан но не в белом списке - черный список
+                if sni:
+                    return "black"
+        
+        # Для других протоколов (Hysteria2 и т.д.) - проверяем маркеры
+        key_upper = key.upper()
         white_markers_upper = [m.upper() for m in WHITE_MARKERS]
         black_markers_upper = [m.upper() for m in BLACK_MARKERS]
         
-        # Проверка на белый список (whitelist/bypass) - приоритет выше
+        # Если есть маркеры белого списка но протокол не поддерживает SNI или SNI не соответствует
         if any(marker in key_upper for marker in white_markers_upper):
-            return "white"
+            # Проверяем SNI еще раз
+            if sni and is_domain_in_white_list(sni):
+                return "white"
+            # Иначе - черный список (не подходит для белого)
+            return "black"
         
-        # Проверка на черный список (blacklist/full/global)
+        # Если есть маркеры черного списка - черный список
         if any(marker in key_upper for marker in black_markers_upper):
             return "black"
         
-        # По умолчанию - универсальный
+        # По умолчанию - универсальный (все рабочие серверы)
         return "universal"
 
 # ==================== ЗАГРУЗКА КЛЮЧЕЙ ====================
-def fetch_keys(urls: List[str], tag: str) -> List[Tuple[str, str]]:
+def fetch_keys(urls: List[str], tag: Optional[str] = None) -> List[Tuple[str, str]]:
+    """
+    Загружает ключи из списка URL.
+    Если tag не указан, определяется автоматически для каждого URL.
+    """
     out = []
+    
+    # Если тег не указан, группируем URL по тегам
+    if tag is None:
+        url_groups = defaultdict(list)
+        for url in urls:
+            url_tag = detect_tag_from_url(url)
+            url_groups[url_tag].append(url)
+        
+        # Загружаем каждую группу отдельно
+        all_results = []
+        for url_tag, url_list in url_groups.items():
+            print(f"\n📥 Загрузка {url_tag}... ({len(url_list)} источников)")
+            results = fetch_keys(url_list, url_tag)
+            all_results.extend(results)
+        return all_results
+    
+    # Если тег указан, используем старую логику
     print(f"\n📥 Загрузка {tag}... ({len(urls)} источников)")
     
     session = requests.Session()
@@ -1778,7 +1758,7 @@ def fetch_keys(urls: List[str], tag: str) -> List[Tuple[str, str]]:
 def format_label(key_info: KeyInfo) -> str:
     """
     Форматирует метку ключа с улучшенным рейтингом.
-    Формат: youtube_status_флагстрана_тип_рейтинг_канал
+    Формат: флагстрана_тип_рейтинг_канал
     Для белых списков добавляет SNI и CIDR информацию.
     """
     # Получаем эмодзи флаг страны
@@ -1787,16 +1767,7 @@ def format_label(key_info: KeyInfo) -> str:
     # Получаем рейтинг (звезды, иконка, оценка)
     stars, icon, grade = key_info.get_rating()
     
-    # Статус YouTube вместо пинга
-    if key_info.metrics.youtube_accessible is True:
-        youtube_status = "✅YT"  # YouTube доступен
-    elif key_info.metrics.youtube_accessible is False:
-        youtube_status = "❌YT"  # YouTube недоступен
-    else:
-        youtube_status = "⏳YT"  # Не проверено
-    
     parts = [
-        youtube_status,
         f"{country_flag}{key_info.country}",  # Флаг и код страны
         key_info.routing_type[0].upper()  # Тип: W/B/U
     ]
@@ -1954,10 +1925,9 @@ class TUI:
             blacklist = BlacklistManager(CFG.BLACKLIST_FILE)
             
             self._draw_progress(0.1, "Загрузка источников...")
-            tasks_ru = fetch_keys(URLS_RU, "RU")
-            tasks_my = fetch_keys(URLS_MY, "MY")
+            all_tasks = fetch_keys(URLS)  # Автоматическое распределение по тегам
             
-            unique = {get_hash(k.split("#")[0]): (k, t) for k, t in tasks_ru + tasks_my}
+            unique = {get_hash(k.split("#")[0]): (k, t) for k, t in all_tasks}
             all_items = list(unique.values())[:local_config['MAX_KEYS']]
             
             self._draw_progress(0.2, "Проверка кэша...")
@@ -1975,19 +1945,8 @@ class TUI:
                 cached = history.get(key_id)
                 
                 if cached and (current_time - cached['time'] < CFG.CACHE_HOURS * 3600) and cached.get('alive'):
-                    # Проверяем YouTube доступность из кэша
-                    youtube_accessible = cached.get('youtube_accessible')
-                    
-                    # Для белых списков YouTube должен быть доступен
-                    routing_type = cached.get('routing_type', 'universal')
-                    if routing_type == "white" and youtube_accessible is False:
-                        # Белый список с недоступным YouTube - пропускаем
-                        to_check.append((key, tag))
-                        continue
-                    
                     metrics = KeyMetrics(
                         latency=cached['latency'], 
-                        youtube_accessible=youtube_accessible,
                         last_check=cached['time']
                     )
                     country = cached.get('country', 'UNKNOWN')
@@ -2065,10 +2024,6 @@ class TUI:
         if not server_ok: 
             return None
         
-        # Определяем тип маршрутизации
-        classifier = SmartClassifier()
-        routing_type = classifier.predict(key)
-        
         # Используем базовую проверку - если сервер доступен, сохраняем ключ
         # Проверка через xray отключена
         if server_ok:
@@ -2093,6 +2048,7 @@ class TUI:
         if config.get('ENABLE_BANDWIDTH_TEST', False) and latency < 300:
             metrics.bandwidth = checker.check_bandwidth(host, port, is_tls)
         
+        # Определяем тип маршрутизации (после проверки соединения)
         classifier = SmartClassifier()
         routing_type = classifier.predict(key)
         country = get_country(key, host)
@@ -2367,10 +2323,9 @@ def run_cli(args):
         
         print("ЗАГРУЗКА ИСТОЧНИКОВ")
         print("="*70)
-        tasks_ru = fetch_keys(URLS_RU, "RU")
-        tasks_my = fetch_keys(URLS_MY, "MY")
+        all_tasks = fetch_keys(URLS)  # Автоматическое распределение по тегам
         
-        unique = {get_hash(k.split("#")[0]): (k, t) for k, t in tasks_ru + tasks_my}
+        unique = {get_hash(k.split("#")[0]): (k, t) for k, t in all_tasks}
         all_items = list(unique.values())[:local_config['MAX_KEYS']]
         print(f"\nУникальных: {len(all_items)}")
         
@@ -2526,10 +2481,6 @@ def _check_key_cli(data, config):
         if not server_ok: 
             return None
         
-        # Определяем тип маршрутизации
-        classifier = SmartClassifier()
-        routing_type = classifier.predict(key)
-        
         # Используем базовую проверку - если сервер доступен, сохраняем ключ
         # Проверка через xray отключена
         if server_ok:
@@ -2554,6 +2505,9 @@ def _check_key_cli(data, config):
         if config.get('ENABLE_BANDWIDTH_TEST', False) and latency < 300:
             metrics.bandwidth = checker.check_bandwidth(host, port, is_tls)
         
+        # Определяем тип маршрутизации (после проверки соединения)
+        classifier = SmartClassifier()
+        routing_type = classifier.predict(key)
         country = get_country(key, host)
         
         key_info = KeyInfo(key, key_id, tag, country, routing_type, metrics)
