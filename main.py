@@ -119,76 +119,94 @@ BAD_MARKERS = ["CN", "IR", "KR", "BR", "IN", "RELAY", "POOL", "🇨🇳", "🇮�
 WHITE_MARKERS = ["white", "whitelist", "bypass", "россия", "russia", "mobile", "cable", "госуслуг", "government", "banking", "bank", "RU", "МТС", "Beeline"]
 BLACK_MARKERS = ["black", "blacklist", "full", "global", "universal", "all", "vpn", "proxy", "tunnel", "freedom"]
 
-# Официальный белый список доменов (разрешенные сервисы при отключении интернета)
-WHITE_LIST_DOMAINS = {
-    # Госуслуги и государственные сервисы
-    'gosuslugi.ru', 'esia.gosuslugi.ru', 'www.gosuslugi.ru',
-    'pos.gosuslugi.ru', 'lk.gosuslugi.ru', 'kabinet.gosuslugi.ru',
+# Ключевые слова для белого списка (проверка по ключевым словам в доменах)
+# Это позволяет находить все поддомены компаний автоматически
+WHITE_LIST_KEYWORDS = {
+    # Соцсети и коммуникации
+    'vk', 'vkontakte',  # ВКонтакте
+    'yandex', 'ya',  # Яндекс
+    'mail', 'mailru',  # Mail.ru
+    'ok', 'odnoklassniki',  # Одноклассники
     
     # Банки
-    'sberbank.ru', 'www.sberbank.ru', 'online.sberbank.ru',
-    'alfabank.ru', 'www.alfabank.ru', 'click.alfabank.ru',
-    'vtb.ru', 'www.vtb.ru', 'online.vtb.ru',
-    'tinkoff.ru', 'www.tinkoff.ru', 'id.tinkoff.ru',
-    'gazprombank.ru', 'www.gazprombank.ru',
+    'sberbank', 'sber',  # Сбербанк
+    'alfabank', 'alfa',  # Альфа-Банк
+    'vtb',  # ВТБ
+    'tinkoff', 'tbank',  # Тинькофф, Т-Банк
+    'gazprombank',  # Газпромбанк
+    'mirpay', 'mir',  # Система Мир
     
     # Операторы связи
-    'beeline.ru', 'my.beeline.ru', 'www.beeline.ru',
-    'megafon.ru', 'lk.megafon.ru', 'www.megafon.ru',
-    'mts.ru', 'login.mts.ru', 'www.mts.ru',
-    'rostelecom.ru', 'lk.rt.ru', 'www.rostelecom.ru',
+    'beeline',  # Билайн
+    'megafon',  # МегаФон
+    'mts',  # МТС
+    'rostelecom', 'rt',  # Ростелеком
+    't2',  # T2
+    'motiv',  # Мотив
     
-    # Почта России
-    'pochta.ru', 'www.pochta.ru', 'tracking.pochta.ru',
+    # Маркетплейсы и магазины
+    'ozon',  # Ozon
+    'wildberries', 'wb',  # Wildberries
+    'avito',  # Avito
+    'beru',  # Беру (Яндекс Маркет)
+    'magnit',  # Магнит
+    'perekrestok',  # Перекресток
+    'pyaterochka',  # Пятёрочка
+    'vkusvill',  # ВкусВилл
+    'vkusnoitochka',  # Вкусно и точка
     
-    # Маркетплейсы
-    'ozon.ru', 'www.ozon.ru',
-    'wildberries.ru', 'www.wildberries.ru',
-    'market.yandex.ru', 'beru.ru',
+    # Госуслуги и государственные сервисы
+    'gosuslugi', 'esia',  # Госуслуги
+    'kremlin',  # Кремль
+    'government',  # Правительство
+    'duma',  # Госдума
+    'genproc',  # Генпрокуратура
+    'council',  # Совет Федерации
+    'deg',  # ДЭГ
+    'mvdrf',  # МВД
+    'mchs',  # МЧС
     
-    # Соцсети
-    'vk.com', 'www.vk.com', 'm.vk.com', 'id.vk.com',
-    'ok.ru', 'www.ok.ru', 'm.ok.ru',
-    'my.mail.ru', 'mail.ru',
-    
-    # Яндекс сервисы
-    'yandex.ru', 'www.yandex.ru', 'ya.ru',
-    'passport.yandex.ru', 'music.yandex.ru',
-    'maps.yandex.ru', 'taxi.yandex.ru',
-    'eda.yandex.ru', 'lavka.yandex.ru',
-    
-    # СМИ
-    'kp.ru', 'www.kp.ru',
-    'ria.ru', 'www.ria.ru',
-    'rbc.ru', 'www.rbc.ru',
-    'lenta.ru', 'www.lenta.ru',
-    'tass.ru', 'www.tass.ru',
+    # Транспорт и навигация
+    'rzd',  # РЖД
+    'tutu',  # Туту.ру
+    '2gis', 'gis',  # 2ГИС
+    'gismeteo',  # Gismeteo
+    'aeroflot',  # Аэрофлот
+    'pobeda',  # Победа
+    'citydrive',  # Ситидрайв
+    'dellin',  # Деловые линии
+    'taximaxim', 'maxim',  # Такси Максим
     
     # Развлечения
-    'rutube.ru', 'www.rutube.ru',
-    'okko.tv', 'www.okko.tv',
-    'ivi.ru', 'www.ivi.ru',
-    'kinopoisk.ru', 'www.kinopoisk.ru',
+    'rutube',  # RuTube
+    'okko',  # Okko
+    'ivi',  # Иви
+    'kinopoisk',  # Кинопоиск
+    'zen',  # Дзен
     
-    # Транспорт
-    'rzd.ru', 'www.rzd.ru', 'pass.rzd.ru',
-    'tutu.ru', 'www.tutu.ru',
-    '2gis.ru', 'www.2gis.ru',
+    # СМИ
+    'kp', 'komsomolskaya',  # Комсомольская правда
+    'ria',  # РИА Новости
+    'rbc',  # РБК
+    'lenta',  # Лента.ру
+    'tass',  # ТАСС
+    'gazeta',  # Газета.ру
+    'rambler',  # Rambler
+    'aif',  # Аргументы и Факты
+    'rg', 'rossiyskaya',  # Российская газета
+    'vedomosti',  # Ведомости
+    '1tv', 'pervyy',  # Первый канал
     
-    # Доставка
-    'magnit.ru', 'www.magnit.ru',
-    'perekrestok.ru', 'www.perekrestok.ru',
-    'pyaterochka.ru', 'www.pyaterochka.ru',
-    'vkusvill.ru', 'www.vkusvill.ru',
+    # Другие сервисы
+    'pochta',  # Почта России
+    'hh', 'headhunter',  # HeadHunter
+    'chestnyznak',  # Честный знак
+    'obyasnyayem',  # Объясняем РФ
+    'moex',  # Мосбиржа
+    'rosatom',  # Росатом
     
-    # Другие популярные домены
-    'avito.ru', 'www.avito.ru',
-    'hh.ru', 'www.hh.ru',
-    'gismeteo.ru', 'www.gismeteo.ru',
-    
-    # Дополнительные распространённые поддомены
-    'cdn.jsdelivr.net', 'cdnjs.cloudflare.com',
-    'telewebion.com', 'cdn.ir',
+    # Российские домены
+    '.ru', '.рф',  # Российские TLD
 }
 
 # ==================== УТИЛИТЫ ====================
@@ -1549,32 +1567,102 @@ def is_garbage(key: str) -> bool:
 def is_domain_in_white_list(sni_domain: Optional[str]) -> bool:
     """
     Проверяет, соответствует ли SNI домен доменам из белого списка.
-    Учитывает поддомены (например, m.vk.com соответствует vk.com).
+    Проверка идет по ключевым словам, что позволяет находить все поддомены компаний автоматически.
+    Например: api.vk.com, vk-api.com, vk.ru - все будут найдены по ключевому слову 'vk'.
     """
     if not sni_domain:
         return False
     
     sni_domain = sni_domain.lower().strip()
     
-    # Прямое совпадение
-    if sni_domain in WHITE_LIST_DOMAINS:
-        return True
-    
-    # Проверка поддоменов (например, m.vk.com -> vk.com)
-    domain_parts = sni_domain.split('.')
-    if len(domain_parts) >= 2:
-        # Проверяем основной домен (последние 2 части)
-        main_domain = '.'.join(domain_parts[-2:])
-        if main_domain in WHITE_LIST_DOMAINS:
-            return True
+    # Проверка по ключевым словам
+    for keyword in WHITE_LIST_KEYWORDS:
+        keyword_lower = keyword.lower()
         
-        # Проверяем все возможные поддомены
-        for i in range(len(domain_parts) - 1):
-            subdomain = '.'.join(domain_parts[i:])
-            if subdomain in WHITE_LIST_DOMAINS:
+        # Для .ru и .рф проверяем что это действительно домен
+        if keyword_lower in ['.ru', '.рф']:
+            # Проверяем что .ru или .рф находится в конце домена или перед следующим доменом
+            if sni_domain.endswith(keyword_lower) or f'{keyword_lower}.' in sni_domain:
+                return True
+            continue
+        
+        # Для остальных ключевых слов проверяем что это отдельное слово
+        # (окружено точками, дефисами или в начале/конце)
+        keyword_pos = sni_domain.find(keyword_lower)
+        if keyword_pos >= 0:
+            # Проверяем что ключевое слово не является частью другого слова
+            before_char = sni_domain[keyword_pos - 1] if keyword_pos > 0 else '.'
+            after_pos = keyword_pos + len(keyword_lower)
+            after_char = sni_domain[after_pos] if after_pos < len(sni_domain) else '.'
+            
+            # Ключевое слово должно быть отдельным (окружено точками, дефисами или границами)
+            # Это позволяет находить: api.vk.com, vk-api.com, vk.ru, но не находить в других словах
+            if (before_char in ['.', '-', '/'] or keyword_pos == 0) and \
+               (after_char in ['.', '-', '/'] or after_pos >= len(sni_domain)):
                 return True
     
     return False
+
+def is_cidr_russian(cidr: Optional[str]) -> bool:
+    """
+    Проверяет, относится ли CIDR к российским IP-адресам.
+    """
+    if not cidr:
+        return False
+    
+    try:
+        # Парсим CIDR
+        network = ipaddress.ip_network(cidr, strict=False)
+        
+        # Российские IP диапазоны (основные)
+        russian_ranges = [
+            ipaddress.ip_network('5.0.0.0/8', strict=False),
+            ipaddress.ip_network('31.0.0.0/8', strict=False),
+            ipaddress.ip_network('37.0.0.0/8', strict=False),
+            ipaddress.ip_network('46.0.0.0/8', strict=False),
+            ipaddress.ip_network('62.0.0.0/8', strict=False),
+            ipaddress.ip_network('77.0.0.0/8', strict=False),
+            ipaddress.ip_network('78.0.0.0/8', strict=False),
+            ipaddress.ip_network('79.0.0.0/8', strict=False),
+            ipaddress.ip_network('80.0.0.0/8', strict=False),
+            ipaddress.ip_network('81.0.0.0/8', strict=False),
+            ipaddress.ip_network('82.0.0.0/8', strict=False),
+            ipaddress.ip_network('83.0.0.0/8', strict=False),
+            ipaddress.ip_network('84.0.0.0/8', strict=False),
+            ipaddress.ip_network('85.0.0.0/8', strict=False),
+            ipaddress.ip_network('87.0.0.0/8', strict=False),
+            ipaddress.ip_network('88.0.0.0/8', strict=False),
+            ipaddress.ip_network('89.0.0.0/8', strict=False),
+            ipaddress.ip_network('90.0.0.0/8', strict=False),
+            ipaddress.ip_network('91.0.0.0/8', strict=False),
+            ipaddress.ip_network('92.0.0.0/8', strict=False),
+            ipaddress.ip_network('93.0.0.0/8', strict=False),
+            ipaddress.ip_network('94.0.0.0/8', strict=False),
+            ipaddress.ip_network('95.0.0.0/8', strict=False),
+            ipaddress.ip_network('109.0.0.0/8', strict=False),
+            ipaddress.ip_network('141.0.0.0/8', strict=False),
+            ipaddress.ip_network('178.0.0.0/8', strict=False),
+            ipaddress.ip_network('185.0.0.0/8', strict=False),
+            ipaddress.ip_network('188.0.0.0/8', strict=False),
+            ipaddress.ip_network('194.0.0.0/8', strict=False),
+            ipaddress.ip_network('195.0.0.0/8', strict=False),
+            ipaddress.ip_network('212.0.0.0/8', strict=False),
+            ipaddress.ip_network('213.0.0.0/8', strict=False),
+            ipaddress.ip_network('217.0.0.0/8', strict=False),
+        ]
+        
+        # Проверяем пересечение с российскими диапазонами
+        for russian_range in russian_ranges:
+            if network.overlaps(russian_range):
+                return True
+        
+        # Для IPv6 пока не проверяем (можно добавить позже)
+        if isinstance(network, ipaddress.IPv6Network):
+            return False
+        
+        return False
+    except (ValueError, ipaddress.AddressValueError):
+        return False
 
 class SmartClassifier:
     """
@@ -1590,7 +1678,7 @@ class SmartClassifier:
         """
         Возвращает тип списка: 'white', 'black' или 'universal'
         
-        Белый список: только если протокол поддерживает SNI И SNI соответствует доменам из белого списка
+        Белый список: если протокол поддерживает SNI И (SNI соответствует доменам из белого списка ИЛИ CIDR указывает на российские IP)
         Черный список: если протокол поддерживает SNI но SNI не в белом списке, или протокол не поддерживает SNI
         Универсальный: все рабочие серверы (по умолчанию)
         """
@@ -1606,13 +1694,23 @@ class SmartClassifier:
                 return "black"
             return "universal"
         
-        # Извлекаем SNI из ключа
-        sni, _ = extract_sni_and_cidr(key)
+        # Извлекаем SNI и CIDR из ключа
+        sni, cidr = extract_sni_and_cidr(key)
         
         # Проверяем соответствие SNI белому списку
-        if sni and is_domain_in_white_list(sni):
-            # SNI соответствует белому списку - это белый список
-            return "white"
+        sni_in_white_list = sni and is_domain_in_white_list(sni)
+        
+        # Проверяем CIDR на российские IP (для белого списка)
+        cidr_is_russian = cidr and is_cidr_russian(cidr)
+        
+        # Если SNI в белом списке ИЛИ CIDR указывает на российские IP - это белый список
+        if sni_in_white_list or cidr_is_russian:
+            # Дополнительно проверяем, что протокол поддерживает SNI/TLS
+            if protocol_type in ("vless", "vmess", "trojan", "hysteria2"):
+                _, _, is_tls = parse_key(key)
+                # Для белого списка желательно наличие TLS или SNI
+                if is_tls or sni or cidr_is_russian:
+                    return "white"
         
         # Если протокол поддерживает SNI (VLESS, VMess, Trojan с TLS), но SNI не в белом списке
         # или SNI отсутствует - это черный список (обходит блокировки, но не подходит для белого)
@@ -1628,12 +1726,13 @@ class SmartClassifier:
                 if any(marker in key_upper for marker in black_markers_upper):
                     return "black"
                 
-                # Если есть маркеры белого списка но SNI не соответствует - черный список
+                # Если есть маркеры белого списка но SNI не соответствует и CIDR не российский - черный список
                 if any(marker in key_upper for marker in white_markers_upper):
-                    return "black"
+                    if not (sni_in_white_list or cidr_is_russian):
+                        return "black"
                 
-                # Если SNI указан но не в белом списке - черный список
-                if sni:
+                # Если SNI указан но не в белом списке и CIDR не российский - черный список
+                if sni and not sni_in_white_list and not cidr_is_russian:
                     return "black"
         
         # Для других протоколов (Hysteria2 и т.д.) - проверяем маркеры
@@ -1641,10 +1740,10 @@ class SmartClassifier:
         white_markers_upper = [m.upper() for m in WHITE_MARKERS]
         black_markers_upper = [m.upper() for m in BLACK_MARKERS]
         
-        # Если есть маркеры белого списка но протокол не поддерживает SNI или SNI не соответствует
+        # Если есть маркеры белого списка
         if any(marker in key_upper for marker in white_markers_upper):
-            # Проверяем SNI еще раз
-            if sni and is_domain_in_white_list(sni):
+            # Проверяем SNI или CIDR
+            if sni_in_white_list or cidr_is_russian:
                 return "white"
             # Иначе - черный список (не подходит для белого)
             return "black"
@@ -1661,6 +1760,7 @@ def fetch_keys(urls: List[str], tag: Optional[str] = None) -> List[Tuple[str, st
     """
     Загружает ключи из списка URL.
     Если tag не указан, определяется автоматически для каждого URL.
+    Улучшенный парсинг для извлечения всех ключей.
     """
     out = []
     
@@ -1679,11 +1779,14 @@ def fetch_keys(urls: List[str], tag: Optional[str] = None) -> List[Tuple[str, st
             all_results.extend(results)
         return all_results
     
-    # Если тег указан, используем старую логику
+    # Если тег указан, используем улучшенную логику
     print(f"\n📥 Загрузка {tag}... ({len(urls)} источников)")
     
     session = requests.Session()
     session.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+    
+    # Поддерживаемые протоколы для поиска
+    protocols = ["vless://", "vmess://", "trojan://", "ss://", "ssr://", "hysteria2://", "hy2://", "socks://", "socks5://"]
     
     for url in urls:
         url = url.strip()
@@ -1692,7 +1795,7 @@ def fetch_keys(urls: List[str], tag: Optional[str] = None) -> List[Tuple[str, st
         
         print(f"  ➜ {url[:60]}...")
         try:
-            resp = session.get(url, timeout=15)
+            resp = session.get(url, timeout=30)  # Увеличен таймаут
             resp.raise_for_status()
             
             content = resp.text.strip()
@@ -1700,21 +1803,71 @@ def fetch_keys(urls: List[str], tag: Optional[str] = None) -> List[Tuple[str, st
                 print(f"    ❌ Пустой ответ")
                 continue
             
+            # Пробуем разные способы декодирования
             lines = []
-            if "://" not in content[:100]:
+            
+            # Способ 1: Проверяем на base64 (если нет протоколов в первых 200 символах)
+            if not any(proto in content[:200] for proto in protocols):
+                # Пробуем декодировать как base64
                 try:
-                    missing_padding = -len(content) % 4
+                    # Убираем пробелы и переносы строк для base64
+                    clean_content = ''.join(content.split())
+                    missing_padding = -len(clean_content) % 4
                     if missing_padding:
-                        content += "=" * missing_padding
-                    decoded = base64.b64decode(content, validate=True).decode('utf-8', errors='ignore')
+                        clean_content += "=" * missing_padding
+                    decoded = base64.b64decode(clean_content, validate=True).decode('utf-8', errors='ignore')
                     lines = decoded.splitlines()
-                except Exception as e:
-                    print(f"    ⚠️ Base64 decode failed: {e}")
-                    lines = content.splitlines()
-            else:
-                lines = content.splitlines()
+                except:
+                    # Если не base64, пробуем как обычный текст
+                    pass
+            
+            # Способ 2: Если не получилось декодировать или уже есть протоколы
+            if not lines:
+                # Разбиваем по разным разделителям
+                # Пробуем разные варианты разделения
+                for separator in ['\n', '\r\n', '\r', '|', ' ', '\t']:
+                    potential_lines = content.split(separator)
+                    if any(proto in line for line in potential_lines[:10] for proto in protocols):
+                        lines = potential_lines
+                        break
+                
+                # Если не нашли разделитель, пробуем найти ключи в строке напрямую
+                if not lines:
+                    # Ищем все вхождения протоколов
+                    found_keys = []
+                    for proto in protocols:
+                        start = 0
+                        while True:
+                            idx = content.find(proto, start)
+                            if idx == -1:
+                                break
+                            # Ищем конец ключа (до следующего протокола или до конца строки)
+                            end = len(content)
+                            for next_proto in protocols:
+                                next_idx = content.find(next_proto, idx + len(proto))
+                                if next_idx != -1 and next_idx < end:
+                                    end = next_idx
+                            # Также ищем конец по разделителям
+                            for sep in ['\n', '\r', '|', ' ', '\t']:
+                                sep_idx = content.find(sep, idx)
+                                if sep_idx != -1 and sep_idx < end:
+                                    end = sep_idx
+                            
+                            key = content[idx:end].strip()
+                            if key and len(key) < 2000:
+                                found_keys.append(key)
+                            start = idx + len(proto)
+                    
+                    if found_keys:
+                        lines = found_keys
+                    else:
+                        # Последняя попытка - просто разбить по строкам
+                        lines = content.splitlines()
             
             loaded = 0
+            skipped_invalid = 0
+            skipped_garbage = 0
+            
             # Определяем тип источника по URL
             url_upper = url.upper()
             source_type = None
@@ -1723,29 +1876,59 @@ def fetch_keys(urls: List[str], tag: Optional[str] = None) -> List[Tuple[str, st
             elif any(m in url_upper for m in ["WHITE", "BYPASS", "WHITELIST"]):
                 source_type = "white"
             
+            # Обрабатываем все строки
             for line in lines:
                 line = line.strip()
-                if line and len(line) < 2000 and "://" in line:
-                    # Проверяем что ключ можно распарсить
-                    host, port, _ = parse_key(line)
-                    if not host:
-                        # Пропускаем ключи которые не парсятся
-                        continue
-                    
-                    if not is_garbage(line):
-                        # Если в источнике указан тип, добавляем маркер в ключ
-                        if source_type and "#" in line:
-                            key_part, label_part = line.rsplit("#", 1)
-                            # Добавляем маркер типа источника в метку
-                            if source_type not in label_part.upper():
-                                line = f"{key_part}#{source_type}_{label_part}"
-                        elif source_type:
-                            # Если нет метки, добавляем маркер
-                            line = f"{line}#{source_type}_source"
-                        out.append((line, tag))
-                        loaded += 1
+                if not line:
+                    continue
+                
+                # Убираем возможные префиксы/суффиксы
+                line = line.strip('|').strip('"').strip("'").strip()
+                
+                # Проверяем что это похоже на ключ (содержит протокол)
+                if not any(proto in line.lower() for proto in protocols):
+                    continue
+                
+                # Проверяем длину
+                if len(line) >= 2000:
+                    skipped_invalid += 1
+                    continue
+                
+                # Проверяем что ключ можно распарсить
+                host, port, _ = parse_key(line)
+                if not host or not port:
+                    skipped_invalid += 1
+                    continue
+                
+                # Проверяем на мусор
+                if is_garbage(line):
+                    skipped_garbage += 1
+                    continue
+                
+                # Если в источнике указан тип, добавляем маркер в ключ
+                if source_type and "#" in line:
+                    key_part, label_part = line.rsplit("#", 1)
+                    # Добавляем маркер типа источника в метку
+                    if source_type.upper() not in label_part.upper():
+                        line = f"{key_part}#{source_type}_{label_part}"
+                elif source_type:
+                    # Если нет метки, добавляем маркер
+                    line = f"{line}#{source_type}_source"
+                
+                out.append((line, tag))
+                loaded += 1
             
-            if loaded: print(f"    ✅ {loaded}")
+            status_parts = []
+            if loaded:
+                status_parts.append(f"✅ {loaded}")
+            if skipped_invalid:
+                status_parts.append(f"⚠️ невалидных: {skipped_invalid}")
+            if skipped_garbage:
+                status_parts.append(f"🗑️ мусор: {skipped_garbage}")
+            
+            if status_parts:
+                print(f"    {' | '.join(status_parts)}")
+                
         except requests.exceptions.RequestException as e:
             print(f"    ❌ HTTP error: {e}")
         except Exception as e:
@@ -1811,25 +1994,20 @@ def format_label(key_info: KeyInfo) -> str:
     return "_".join(parts)
 
 def save_chunked(keys_list: List[str], folder: str, base_name: str) -> List[str]:
+    """
+    Сохраняет все ключи в один файл без разбиения на части.
+    """
     created_files = []
     valid_keys = [k.strip() for k in keys_list if k and isinstance(k, str) and k.strip()]
     
-    if not valid_keys:
-        fname = f"{base_name}.txt"
-        os.makedirs(folder, exist_ok=True)
-        with open(os.path.join(folder, fname), "w", encoding="utf-8") as f:
-            f.write("")
-        return [fname]
-    
-    chunks = [valid_keys[i:i + CFG.CHUNK_LIMIT] for i in range(0, len(valid_keys), CFG.CHUNK_LIMIT)]
-    
+    fname = f"{base_name}.txt"
     os.makedirs(folder, exist_ok=True)
-    for i, chunk in enumerate(chunks, 1):
-        fname = f"{base_name}.txt" if len(chunks) == 1 else f"{base_name}_part{i}.txt"
-        with open(os.path.join(folder, fname), "w", encoding="utf-8") as f:
-            f.write("\n".join(chunk))
-        created_files.append(fname)
-        print(f"  📄 {fname}: {len(chunk)} ключей")
+    
+    with open(os.path.join(folder, fname), "w", encoding="utf-8") as f:
+        f.write("\n".join(valid_keys))
+    
+    created_files.append(fname)
+    print(f"  📄 {fname}: {len(valid_keys)} ключей")
     
     return created_files
 
@@ -1950,6 +2128,7 @@ class TUI:
                         last_check=cached['time']
                     )
                     country = cached.get('country', 'UNKNOWN')
+                    routing_type = cached.get('routing_type', 'universal')
                     key_info = KeyInfo(key, key_id, tag, country, routing_type, metrics)
                     label = format_label(key_info)
                     final = f"{key.split('#')[0]}#{label}"
@@ -2010,43 +2189,63 @@ class TUI:
         protocol_type = get_protocol_type(key)
         protocol = "udp" if protocol_type == "hysteria2" else "tcp"
         
-        # Базовая проверка соединения с VPN сервером (без измерения пинга)
-        # Упрощенная проверка: если сервер отвечает на TCP/UDP соединение - считаем рабочим
+        # Для российских источников (RU) - всегда более глубокая проверка
+        is_ru_source = tag == "RU"
+        enable_deep_for_ru = is_ru_source or config.get('ENABLE_DEEP_TEST', False)
+        
+        # Базовая проверка соединения с VPN сервером
         server_ok = False
-        for attempt in range(CFG.RETRY_ATTEMPTS):
-            if checker.check_basic(host, port, is_tls, protocol):
+        latency = None
+        
+        # Для RU источников делаем больше попыток и более тщательную проверку
+        retry_count = CFG.RETRY_ATTEMPTS * (2 if is_ru_source else 1)
+        
+        for attempt in range(retry_count):
+            result = checker.check_basic(host, port, is_tls, protocol)
+            if result:
                 server_ok = True
+                latency = result  # check_basic возвращает latency
                 break
             time.sleep(0.1 * (attempt + 1))
         
-        # Если сервер не прошел проверку, НЕ добавляем в blacklist сразу
-        # Многие серверы могут быть временно недоступны, но работать позже
+        # Если сервер не прошел базовую проверку
         if not server_ok: 
             return None
         
-        # Используем базовую проверку - если сервер доступен, сохраняем ключ
-        # Проверка через xray отключена
-        if server_ok:
-            # Сервер доступен, используем фиксированное значение latency
+        # Используем реальную latency если есть, иначе фиксированное значение
+        if latency is None:
             latency = 100
-        else:
-            # Сервер недоступен - отклоняем
-            blacklist.record_failure(host)
-            return None
         
-        # Глубокая проверка работоспособности (только для полной проверки)
-        if config.get('ENABLE_DEEP_TEST', False):
+        # Глубокая проверка работоспособности (всегда для RU, или если включена в настройках)
+        if enable_deep_for_ru:
             deep_check = checker.check_deep(key, host, port, is_tls)
             if not deep_check:
-                # Сервер не отвечает на глубокую проверку - помечаем как нерабочий
-                blacklist.record_failure(host)
-                return None
+                # Для RU источников делаем дополнительную проверку
+                if is_ru_source:
+                    # Пробуем еще раз с увеличенным таймаутом
+                    time.sleep(0.2)
+                    deep_check = checker.check_deep(key, host, port, is_tls)
+                
+                if not deep_check:
+                    # Сервер не отвечает на глубокую проверку - помечаем как нерабочий
+                    blacklist.record_failure(host)
+                    return None
         
+        # Для RU источников делаем дополнительные метрики
         metrics = KeyMetrics(latency=latency, last_check=time.time())
-        if config.get('ENABLE_JITTER_TEST', False) and latency < 200:
-            metrics.jitter = checker.check_jitter(host, port, is_tls)
-        if config.get('ENABLE_BANDWIDTH_TEST', False) and latency < 300:
-            metrics.bandwidth = checker.check_bandwidth(host, port, is_tls)
+        
+        # Для RU источников всегда проверяем jitter и bandwidth если доступны
+        if is_ru_source:
+            if latency < 300:  # Для RU проверяем даже при большей задержке
+                metrics.jitter = checker.check_jitter(host, port, is_tls)
+            if latency < 400:  # Для RU проверяем bandwidth даже при большей задержке
+                metrics.bandwidth = checker.check_bandwidth(host, port, is_tls)
+        else:
+            # Для других источников - только если включено в настройках
+            if config.get('ENABLE_JITTER_TEST', False) and latency < 200:
+                metrics.jitter = checker.check_jitter(host, port, is_tls)
+            if config.get('ENABLE_BANDWIDTH_TEST', False) and latency < 300:
+                metrics.bandwidth = checker.check_bandwidth(host, port, is_tls)
         
         # Определяем тип маршрутизации (после проверки соединения)
         classifier = SmartClassifier()
@@ -2054,7 +2253,14 @@ class TUI:
         country = get_country(key, host)
         
         key_info = KeyInfo(key, key_id, tag, country, routing_type, metrics)
-        if key_info.quality_score() < config.get('MIN_QUALITY_SCORE', 0.0):
+        
+        # Для RU источников используем более низкий порог качества (они проверяются глубже)
+        min_quality = config.get('MIN_QUALITY_SCORE', 0.0)
+        if is_ru_source:
+            # Для RU снижаем минимальный порог на 10 пунктов, так как проверка более строгая
+            min_quality = max(0.0, min_quality - 10.0)
+        
+        if key_info.quality_score() < min_quality:
             return None
         
         label = format_label(key_info)
@@ -2068,7 +2274,8 @@ class TUI:
             'time': time.time(),
             'country': country,
             'routing_type': routing_type,
-            'deep_check': config.get('ENABLE_DEEP_TEST', False)
+            'deep_check': enable_deep_for_ru,
+            'is_ru_source': is_ru_source
         }
         save_json(CFG.HISTORY_FILE, history)
         
@@ -2467,43 +2674,63 @@ def _check_key_cli(data, config):
         protocol_type = get_protocol_type(key)
         protocol = "udp" if protocol_type == "hysteria2" else "tcp"
         
-        # Базовая проверка соединения с VPN сервером (без измерения пинга)
-        # Упрощенная проверка: если сервер отвечает на TCP/UDP соединение - считаем рабочим
+        # Для российских источников (RU) - всегда более глубокая проверка
+        is_ru_source = tag == "RU"
+        enable_deep_for_ru = is_ru_source or config.get('ENABLE_DEEP_TEST', False)
+        
+        # Базовая проверка соединения с VPN сервером
         server_ok = False
-        for attempt in range(CFG.RETRY_ATTEMPTS):
-            if checker.check_basic(host, port, is_tls, protocol):
+        latency = None
+        
+        # Для RU источников делаем больше попыток и более тщательную проверку
+        retry_count = CFG.RETRY_ATTEMPTS * (2 if is_ru_source else 1)
+        
+        for attempt in range(retry_count):
+            result = checker.check_basic(host, port, is_tls, protocol)
+            if result:
                 server_ok = True
+                latency = result  # check_basic возвращает latency
                 break
             time.sleep(0.1 * (attempt + 1))
         
-        # Если сервер не прошел проверку, НЕ добавляем в blacklist сразу
-        # Многие серверы могут быть временно недоступны, но работать позже
+        # Если сервер не прошел базовую проверку
         if not server_ok: 
             return None
         
-        # Используем базовую проверку - если сервер доступен, сохраняем ключ
-        # Проверка через xray отключена
-        if server_ok:
-            # Сервер доступен, используем фиксированное значение latency
+        # Используем реальную latency если есть, иначе фиксированное значение
+        if latency is None:
             latency = 100
-        else:
-            # Сервер недоступен - отклоняем
-            blacklist.record_failure(host)
-            return None
         
-        # Глубокая проверка работоспособности (только для полной проверки)
-        if config.get('ENABLE_DEEP_TEST', False):
+        # Глубокая проверка работоспособности (всегда для RU, или если включена в настройках)
+        if enable_deep_for_ru:
             deep_check = checker.check_deep(key, host, port, is_tls)
             if not deep_check:
-                # Сервер не отвечает на глубокую проверку - помечаем как нерабочий
-                blacklist.record_failure(host)
-                return None
+                # Для RU источников делаем дополнительную проверку
+                if is_ru_source:
+                    # Пробуем еще раз с увеличенным таймаутом
+                    time.sleep(0.2)
+                    deep_check = checker.check_deep(key, host, port, is_tls)
+                
+                if not deep_check:
+                    # Сервер не отвечает на глубокую проверку - помечаем как нерабочий
+                    blacklist.record_failure(host)
+                    return None
         
+        # Для RU источников делаем дополнительные метрики
         metrics = KeyMetrics(latency=latency, last_check=time.time())
-        if config.get('ENABLE_JITTER_TEST', False) and latency < 200:
-            metrics.jitter = checker.check_jitter(host, port, is_tls)
-        if config.get('ENABLE_BANDWIDTH_TEST', False) and latency < 300:
-            metrics.bandwidth = checker.check_bandwidth(host, port, is_tls)
+        
+        # Для RU источников всегда проверяем jitter и bandwidth если доступны
+        if is_ru_source:
+            if latency < 300:  # Для RU проверяем даже при большей задержке
+                metrics.jitter = checker.check_jitter(host, port, is_tls)
+            if latency < 400:  # Для RU проверяем bandwidth даже при большей задержке
+                metrics.bandwidth = checker.check_bandwidth(host, port, is_tls)
+        else:
+            # Для других источников - только если включено в настройках
+            if config.get('ENABLE_JITTER_TEST', False) and latency < 200:
+                metrics.jitter = checker.check_jitter(host, port, is_tls)
+            if config.get('ENABLE_BANDWIDTH_TEST', False) and latency < 300:
+                metrics.bandwidth = checker.check_bandwidth(host, port, is_tls)
         
         # Определяем тип маршрутизации (после проверки соединения)
         classifier = SmartClassifier()
@@ -2512,7 +2739,12 @@ def _check_key_cli(data, config):
         
         key_info = KeyInfo(key, key_id, tag, country, routing_type, metrics)
         
+        # Для RU источников используем более низкий порог качества (они проверяются глубже)
         min_quality = config.get('MIN_QUALITY_SCORE', 0.0)
+        if is_ru_source:
+            # Для RU снижаем минимальный порог на 10 пунктов, так как проверка более строгая
+            min_quality = max(0.0, min_quality - 10.0)
+        
         if key_info.quality_score() < min_quality:
             return None
         
@@ -2527,7 +2759,8 @@ def _check_key_cli(data, config):
             'time': time.time(),
             'country': country,
             'routing_type': routing_type,
-            'deep_check': config.get('ENABLE_DEEP_TEST', False)
+            'deep_check': enable_deep_for_ru,
+            'is_ru_source': is_ru_source
         }
         save_json(CFG.HISTORY_FILE, history)
         
