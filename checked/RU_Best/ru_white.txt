@@ -1,9 +1,8 @@
 vless://53fff6cc-b4ec-43e8-ade5-e0c42972fc33@37.120.184.180:80?security=&type=ws&path=/news&host=vk.com&encryption=none#🇳🇴NO_W_🏳️_SNI:vk.com_🏆5★A+_@vlesstrojan
-vless://199a78a5-b4d4-4064-a0db-bb37c5839134@212.192.31.146:443?encryption=none&security=none&type=ws&host=m.vk.com&path=%2Fpanika#🇳🇴NO_W_🏳️_SNI:vk.com_🏆5★A+_@vlesstrojan
-vless://53fff6cc-b4ec-43e8-ade5-e0c42972fc33@37.120.184.180:80?encryption=none&security=none&type=ws&host=ok.ru&path=%2Fnews#🇳🇴NO_W_🏳️_SNI:ok.ru_🏆5★A+_@vlesstrojan
+vless://199a78a5-b4d4-4064-a0db-bb37c5839134@212.192.31.146:443?encryption=none&security=none&type=ws&host=m.vk.com&path=%2Fpanika#🇸🇪SE_W_🏳️_SNI:vk.com_🏆5★A+_@vlesstrojan
+vless://53fff6cc-b4ec-43e8-ade5-e0c42972fc33@37.120.184.180:80?encryption=none&security=none&type=ws&host=ok.ru&path=%2Fnews#🇸🇪SE_W_🏳️_SNI:ok.ru_🏆5★A+_@vlesstrojan
 vless://53fff6cc-b4ec-43e8-ade5-e0c42972fc33@37.120.184.180:80?security=&type=ws&path=/news&host=web.yota.ru&encryption=none#🇳🇴NO_W_🏳️_SNI:yota.ru_🏆5★A+_@vlesstrojan
 vless://53fff6cc-b4ec-43e8-ade5-e0c42972fc33@37.120.184.180:80?encryption=none&host=ok.ru&path=%2Fnews&type=ws#🇳🇴NO_W_🏳️_SNI:ok.ru_🏆5★A+_@vlesstrojan
 vless://53fff6cc-b4ec-43e8-ade5-e0c42972fc33@37.120.184.180:80?security=&type=ws&path=/news&host=vk.ru&encryption=none#🇳🇴NO_W_🏳️_SNI:vk.ru_🏆5★A+_@vlesstrojan
 vless://53fff6cc-b4ec-43e8-ade5-e0c42972fc33@37.120.184.180:80?security=&type=ws&path=/news&host=ya.ru&encryption=none#🇳🇴NO_W_🏳️_SNI:ya.ru_🏆5★A+_@vlesstrojan
 hysteria2://dongtaiwang.com@208.87.243.187:22222?sni=sberbank.ru&insecure=1&allowInsecure=1#🇹🇼TW_W_🏳️_SNI:sberbank.ru_✅4★B_@vlesstrojan
-hysteria2://freehomesvpnchannel3@channel1.saghetalaie.homes:46914?insecure=1&sni=nalog.ru&obfs=salamander&obfs-password=&O#🌐UNKNOWN_W_🏳️_SNI:nalog.ru_✅4★B_@vlesstrojan

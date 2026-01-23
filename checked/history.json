@@ -1,1 +1,101 @@
-{}
+{
+  "89c52d49e83b2f0d": {
+    "alive": true,
+    "latency": 54,
+    "time": 1769196107.1456997,
+    "country": "NO",
+    "routing_type": "black",
+    "deep_check": true,
+    "is_ru_source": false
+  },
+  "f7d4d394f219b473": {
+    "alive": true,
+    "latency": 198,
+    "time": 1769196107.3691006,
+    "country": "NO",
+    "routing_type": "universal",
+    "deep_check": true,
+    "is_ru_source": false
+  },
+  "a97f9ff50d24c0ad": {
+    "alive": true,
+    "latency": 31,
+    "time": 1769196114.3026443,
+    "country": "NO",
+    "routing_type": "black",
+    "deep_check": true,
+    "is_ru_source": true
+  },
+  "a122c775d183ff7f": {
+    "alive": true,
+    "latency": 153,
+    "time": 1769196114.366128,
+    "country": "NO",
+    "routing_type": "black",
+    "deep_check": true,
+    "is_ru_source": true
+  },
+  "e5fd463d27ed00c6": {
+    "alive": true,
+    "latency": 38,
+    "time": 1769196114.7911282,
+    "country": "NO",
+    "routing_type": "black",
+    "deep_check": true,
+    "is_ru_source": true
+  },
+  "aac92ed8c551eb9c": {
+    "alive": true,
+    "latency": 70,
+    "time": 1769196115.1440518,
+    "country": "NO",
+    "routing_type": "black",
+    "deep_check": true,
+    "is_ru_source": true
+  },
+  "d4861220bd977a69": {
+    "alive": true,
+    "latency": 75,
+    "time": 1769196115.43815,
+    "country": "NO",
+    "routing_type": "black",
+    "deep_check": true,
+    "is_ru_source": true
+  },
+  "72d1706ea0a57544": {
+    "alive": true,
+    "latency": 33,
+    "time": 1769196115.9366515,
+    "country": "NO",
+    "routing_type": "black",
+    "deep_check": true,
+    "is_ru_source": true
+  },
+  "c18adca7d8e23c9d": {
+    "alive": true,
+    "latency": 55,
+    "time": 1769196116.5096352,
+    "country": "NO",
+    "routing_type": "black",
+    "deep_check": true,
+    "is_ru_source": true
+  },
+  "6eef32ce2488cba9": {
+    "alive": true,
+    "latency": 2258,
+    "time": 1769196119.6183243,
+    "country": "NO",
+    "routing_type": "black",
+    "deep_check": true,
+    "is_ru_source": true
+  },
+  "351b7a4408ff93bf": {
+    "alive": true,
+    "latency": 26,
+    "time": 1769196127.46648,
+    "country": "NO",
+    "routing_type": "black",
+    "deep_check": true,
+    "is_ru_source": true
+  }
+}
