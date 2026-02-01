@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-VPN Checker v3.0 - Проверка с определением белого списка
-Распределение: RU_Best/ru_white.txt и My_Euro/euro_*.txt
+VPN Checker v3.1 - Улучшенная проверка соединений
+Добавлено:
+- Проверка открытия SOCKS5 порта
+- Retry логика для нестабильных соединений
+- Увеличенные таймауты
+- Измерение времени ответа
+- Детальное логирование проблем
 """
 
 import os
@@ -11,6 +16,7 @@ import time
 import subprocess
 import tempfile
 import requests
+import socket
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Optional, Tuple
 from dataclasses import dataclass
@@ -22,25 +28,32 @@ class Config:
     """Настройки приложения"""
     XRAY_PATH: str = "/home/misha/vpn-checker-backend-fox/Xray-linux-64/xray"
 
-    # Новая структура папок
+    # Структура папок
     CHECKED_DIR: str = "checked"
     RU_DIR: str = "checked/RU_Best"
     EURO_DIR: str = "checked/My_Euro"
 
     SOCKS_PORT_START: int = 20000
-    TIMEOUT: int = 15
+
+    # УЛУЧШЕННЫЕ ТАЙМАУТЫ
+    XRAY_STARTUP_WAIT: int = 5  # Было 3, стало 5
+    CONNECTION_TIMEOUT: int = 8  # Timeout на подключение
+    REQUEST_TIMEOUT: int = 15    # Timeout на запрос (было 10)
+    TOTAL_TIMEOUT: int = 20      # Общий timeout на проверку ключа
+
+    # RETRY НАСТРОЙКИ
+    RETRY_ATTEMPTS: int = 2      # Количество попыток
+    RETRY_DELAY: int = 2         # Задержка между попытками
 
     MAX_WORKERS: int = 10
     MAX_KEYS: int = 99999
 
-    # URL для проверки белого списка
+    # URL для проверки
     RUSSIAN_TEST_SITES: List[str] = None
     FOREIGN_TEST_SITES: List[str] = None
-
     SOURCES: List[str] = None
 
     def __post_init__(self):
-        # Сайты для проверки белого списка
         if self.RUSSIAN_TEST_SITES is None:
             self.RUSSIAN_TEST_SITES = [
                 "https://vk.com",
@@ -82,6 +95,10 @@ class Config:
                 "https://translate.yandex.ru/translate?url=https://etoneya.a9fm.site/youtube&lang=en-ru",
                 "https://etoneya.a9fm.site/other",
                 "https://translate.yandex.ru/translate?url=https://etoneya.a9fm.site/other&lang=en-ru",
+                "https://vlesstrojan.alexanderyurievich88.workers.dev?token=sub",
+                "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/Vless-Reality-White-Lists-Rus-Mobile.txt",
+                "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/Vless-Reality-White-Lists-Rus-Mobile-2.txt",
+                "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS_mobile.txt",
             ]
 
 CFG = Config()
@@ -108,7 +125,8 @@ class XrayManager:
                 preexec_fn=os.setsid
             )
 
-            time.sleep(3)
+            # УЛУЧШЕНИЕ: Увеличенное время ожидания
+            time.sleep(CFG.XRAY_STARTUP_WAIT)
 
             if self.process.poll() is not None:
                 return False
@@ -378,20 +396,80 @@ def parse_shadowsocks(key: str) -> Optional[dict]:
     except:
         return None
 
-# ==================== TESTING ====================
-def test_site(port: int, url: str, timeout: int = 10) -> bool:
-    """Проверяет доступность сайта через прокси"""
+# ==================== УЛУЧШЕННОЕ ТЕСТИРОВАНИЕ ====================
+
+def check_socks_port(port: int, timeout: int = 3) -> Tuple[bool, str]:
+    """
+    НОВОЕ: Проверяет что SOCKS5 порт реально открыт
+    Возвращает: (успех, сообщение)
+    """
     try:
-        result = subprocess.run(
-            ["curl", "-x", f"socks5h://127.0.0.1:{port}", "-m", str(timeout),
-             "-s", "-o", "/dev/null", "-w", "%{http_code}", url],
-            capture_output=True,
-            timeout=timeout + 2
-        )
-        response_code = result.stdout.decode().strip()
-        return response_code in ["200", "204", "301", "302"]
-    except:
-        return False
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        result = sock.connect_ex(('127.0.0.1', port))
+        sock.close()
+
+        if result == 0:
+            return True, "Порт открыт"
+        else:
+            return False, f"Порт {port} закрыт (код: {result})"
+    except Exception as e:
+        return False, f"Ошибка проверки порта: {str(e)[:30]}"
+
+
+def test_site_with_retry(port: int, url: str, retries: int = None) -> Tuple[bool, str, float]:
+    """
+    УЛУЧШЕНО: Проверяет доступность сайта через прокси с retry
+    Возвращает: (успех, причина, время_ответа)
+    """
+    if retries is None:
+        retries = CFG.RETRY_ATTEMPTS
+
+    for attempt in range(retries):
+        try:
+            start_time = time.time()
+
+            result = subprocess.run(
+                [
+                    "curl",
+                    "-x", f"socks5h://127.0.0.1:{port}",
+                    "-m", str(CFG.REQUEST_TIMEOUT),
+                    "--connect-timeout", str(CFG.CONNECTION_TIMEOUT),
+                    "-s", "-o", "/dev/null",
+                    "-w", "%{http_code}",
+                    "--max-time", str(CFG.REQUEST_TIMEOUT),
+                    url
+                ],
+                capture_output=True,
+                timeout=CFG.REQUEST_TIMEOUT + 2
+            )
+
+            elapsed_time = time.time() - start_time
+            response_code = result.stdout.decode().strip()
+
+            if response_code in ["200", "204", "301", "302"]:
+                return True, f"OK ({response_code})", elapsed_time
+
+            # Если не последняя попытка - делаем паузу
+            if attempt < retries - 1:
+                time.sleep(CFG.RETRY_DELAY)
+            else:
+                return False, f"Bad code: {response_code}", elapsed_time
+
+        except subprocess.TimeoutExpired:
+            # ВАЖНО: Timeout = пакеты ушли в никуда
+            if attempt < retries - 1:
+                time.sleep(CFG.RETRY_DELAY)
+            else:
+                return False, "Timeout (нет ответа)", CFG.REQUEST_TIMEOUT
+        except Exception as e:
+            if attempt < retries - 1:
+                time.sleep(CFG.RETRY_DELAY)
+            else:
+                return False, f"Error: {str(e)[:20]}", 0
+
+    return False, "Все попытки failed", 0
+
 
 def is_russian_cidr(ip: str) -> bool:
     """Проверяет российские IP диапазоны"""
@@ -402,6 +480,7 @@ def is_russian_cidr(ip: str) -> bool:
         "141.", "178.", "185.", "188.", "194.", "195.", "212.", "213.", "217."
     ]
     return any(ip.startswith(prefix) for prefix in russian_prefixes)
+
 
 def is_russian_domain(domain: str) -> bool:
     """Проверяет российские домены"""
@@ -415,6 +494,7 @@ def is_russian_domain(domain: str) -> bool:
     ]
     return any(keyword in domain for keyword in russian_keywords)
 
+
 def has_white_markers(key: str) -> bool:
     """Проверяет маркеры белого списка в ключе"""
     key_lower = key.lower()
@@ -424,19 +504,21 @@ def has_white_markers(key: str) -> bool:
     ]
     return any(marker in key_lower for marker in white_markers)
 
-def check_key_type(key: str, port: int) -> str:
-    """
-    Определяет тип ключа с приоритетом:
-    1. CIDR (если российские IP)
-    2. SNI/домен (если российский)
-    3. Маркеры в названии
-    4. Тест через сайты
-    """
-    # 1. Проверяем CIDR и SNI в самом ключе
-    try:
-        from urllib.parse import parse_qs, unquote
 
-        # Извлекаем параметры из ключа
+def check_key_type(key: str, port: int) -> Tuple[str, str]:
+    """
+    УЛУЧШЕНО: Определяет тип ключа с детальным логированием
+    Возвращает: (тип, причина)
+    """
+    # 1. Проверяем SOCKS5 порт
+    port_ok, port_msg = check_socks_port(port, timeout=3)
+    if not port_ok:
+        return "none", f"Порт: {port_msg}"
+
+    # 2. Проверяем CIDR и SNI в самом ключе
+    try:
+        from urllib.parse import parse_qs
+
         if "?" in key:
             params_part = key.split("?")[1].split("#")[0]
             query = parse_qs(params_part)
@@ -444,51 +526,68 @@ def check_key_type(key: str, port: int) -> str:
             # Проверяем SNI
             sni = query.get("sni", [None])[0]
             if sni and is_russian_domain(sni):
-                return "white"
+                # Проверяем что хоть что-то работает
+                success, reason, elapsed = test_site_with_retry(port, CFG.RUSSIAN_TEST_SITES[0], retries=1)
+                if success:
+                    return "white", f"SNI={sni} (РФ домен)"
 
             # Проверяем dest (CIDR)
             dest = query.get("dest", [None])[0]
             if dest and is_russian_cidr(dest):
-                return "white"
+                success, reason, elapsed = test_site_with_retry(port, CFG.RUSSIAN_TEST_SITES[0], retries=1)
+                if success:
+                    return "white", f"CIDR={dest} (РФ IP)"
 
         # Проверяем host в самом адресе
         if "@" in key:
             host_part = key.split("@")[1].split(":")[0].split("?")[0]
             if is_russian_cidr(host_part):
-                return "white"
+                success, reason, elapsed = test_site_with_retry(port, CFG.RUSSIAN_TEST_SITES[0], retries=1)
+                if success:
+                    return "white", f"Host={host_part} (РФ IP)"
     except:
         pass
 
-    # 2. Проверяем маркеры в названии/комментарии
+    # 3. Проверяем маркеры в названии
     if has_white_markers(key):
-        # Если есть маркеры белого списка - проверяем что хоть что-то работает
-        if test_site(port, CFG.RUSSIAN_TEST_SITES[0], timeout=5):
-            return "white"
+        success, reason, elapsed = test_site_with_retry(port, CFG.RUSSIAN_TEST_SITES[0], retries=1)
+        if success:
+            return "white", f"Маркер белого списка ({reason}, {elapsed:.1f}s)"
 
-    # 3. Тест через сайты (только если не определили по параметрам)
+    # 4. Полное тестирование через сайты (с retry)
     russian_works = False
+    russian_time = 0
+    russian_reason = ""
+
     for site in CFG.RUSSIAN_TEST_SITES:
-        if test_site(port, site, timeout=8):
+        success, reason, elapsed = test_site_with_retry(port, site, retries=CFG.RETRY_ATTEMPTS)
+        if success:
             russian_works = True
+            russian_time = elapsed
+            russian_reason = reason
             break
 
     if not russian_works:
-        return "none"
+        return "none", f"РФ сайты недоступны"
 
-    # Проверяем зарубежные сайты
+    # Проверяем зарубежные сайты (меньше retry для скорости)
     foreign_works = False
+    foreign_time = 0
+
     for site in CFG.FOREIGN_TEST_SITES:
-        if test_site(port, site, timeout=8):
+        success, reason, elapsed = test_site_with_retry(port, site, retries=1)
+        if success:
             foreign_works = True
+            foreign_time = elapsed
             break
 
     # Определяем тип
     if russian_works and not foreign_works:
-        return "white"
+        return "white", f"Только РФ ({russian_time:.1f}s)"
     elif russian_works and foreign_works:
-        return "universal"
+        return "universal", f"РФ+Зарубеж ({russian_time:.1f}s + {foreign_time:.1f}s)"
     else:
-        return "none"
+        return "none", "Частично работает"
 
 # ==================== KEY LOADING ====================
 def fetch_keys_from_url(url: str) -> List[str]:
@@ -519,6 +618,7 @@ def fetch_keys_from_url(url: str) -> List[str]:
         print(f"   ❌ {e}")
         return []
 
+
 def load_all_keys(sources: List[str], max_keys: int) -> List[str]:
     """Загружает все ключи"""
     print("\n" + "="*70)
@@ -538,13 +638,16 @@ def load_all_keys(sources: List[str], max_keys: int) -> List[str]:
     return unique_keys
 
 # ==================== KEY CHECKING ====================
-def check_single_key(key: str, key_index: int) -> Tuple[bool, str, Optional[str], str]:
-    """Проверяет один ключ. Возвращает: (успех, причина, ключ, тип)"""
+def check_single_key(key: str, key_index: int) -> Tuple[bool, str, Optional[str], str, str]:
+    """
+    УЛУЧШЕНО: Проверяет один ключ с детальной диагностикой
+    Возвращает: (успех, причина, ключ, тип, детали)
+    """
     port = CFG.SOCKS_PORT_START + (key_index % 500)
     config = create_xray_config(key, port)
 
     if not config:
-        return False, "Ошибка парсинга", None, "none"
+        return False, "Ошибка парсинга", None, "none", "Не удалось разобрать ключ"
 
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
         json.dump(config, f, indent=2)
@@ -554,23 +657,30 @@ def check_single_key(key: str, key_index: int) -> Tuple[bool, str, Optional[str]
     try:
         xray = XrayManager(config_path, port)
 
+        # Запускаем Xray
         if not xray.start():
             xray.stop()
             os.unlink(config_path)
-            return False, "Xray не запустился", None, "none"
+            return False, "Xray не запустился", None, "none", "Процесс Xray упал"
 
-        # Определяем тип ключа (передаем сам ключ для анализа)
-        key_type = check_key_type(key, port)
+        # Проверяем что процесс жив
+        if xray.process.poll() is not None:
+            xray.stop()
+            os.unlink(config_path)
+            return False, "Xray упал", None, "none", "Процесс завершился сразу"
+
+        # Определяем тип ключа (с детальной диагностикой)
+        key_type, details = check_key_type(key, port)
 
         xray.stop()
         os.unlink(config_path)
 
         if key_type == "white":
-            return True, "Белый список", key, "white"
+            return True, "Белый список", key, "white", details
         elif key_type == "universal":
-            return True, "Универсальный", key, "universal"
+            return True, "Универсальный", key, "universal", details
         else:
-            return False, "Не работает", None, "none"
+            return False, "Не работает", None, "none", details
 
     except Exception as e:
         if xray:
@@ -579,13 +689,20 @@ def check_single_key(key: str, key_index: int) -> Tuple[bool, str, Optional[str]
             os.unlink(config_path)
         except:
             pass
-        return False, f"Ошибка: {str(e)[:30]}", None, "none"
+        return False, f"Ошибка", None, "none", str(e)[:50]
+
 
 def check_keys(keys: List[str], max_workers: int) -> Tuple[List[str], List[str]]:
-    """Проверяет ключи. Возвращает: (white_keys, universal_keys)"""
+    """Проверяет ключи"""
     print("\n" + "="*70)
-    print("ПРОВЕРКА КЛЮЧЕЙ")
+    print("ПРОВЕРКА КЛЮЧЕЙ (УЛУЧШЕННАЯ)")
     print("="*70)
+    print(f"\n⚙️  Настройки:")
+    print(f"   • Startup wait: {CFG.XRAY_STARTUP_WAIT}s")
+    print(f"   • Connection timeout: {CFG.CONNECTION_TIMEOUT}s")
+    print(f"   • Request timeout: {CFG.REQUEST_TIMEOUT}s")
+    print(f"   • Retry попыток: {CFG.RETRY_ATTEMPTS}")
+    print(f"   • Задержка retry: {CFG.RETRY_DELAY}s")
     print(f"\n⚠️  Проверка типа ключа:")
     print(f"   🏳️  Белый список = РФ работает, зарубеж НЕТ")
     print(f"   🌍 Универсальный = всё работает\n")
@@ -607,28 +724,30 @@ def check_keys(keys: List[str], max_workers: int) -> Tuple[List[str], List[str]]
         for future in as_completed(futures):
             checked += 1
             try:
-                success, reason, working_key, key_type = future.result(timeout=CFG.TIMEOUT + 15)
+                success, reason, working_key, key_type, details = future.result(timeout=CFG.TOTAL_TIMEOUT)
 
                 if success and working_key:
                     if key_type == "white":
                         white_keys.append(working_key)
-                        print(f"🏳️  [{checked}/{total}] {reason} (Белых: {len(white_keys)})")
+                        print(f"🏳️  [{checked}/{total}] {reason} - {details} (Белых: {len(white_keys)})")
                     elif key_type == "universal":
                         universal_keys.append(working_key)
-                        print(f"🌍 [{checked}/{total}] {reason} (Универс: {len(universal_keys)})")
+                        print(f"🌍 [{checked}/{total}] {reason} - {details} (Универс: {len(universal_keys)})")
                 else:
                     failed += 1
+                    # Показываем каждую 10-ю ошибку с деталями
                     if checked % 10 == 0:
-                        print(f"❌ [{checked}/{total}] {reason} (Не работает: {failed})")
-            except:
+                        print(f"❌ [{checked}/{total}] {reason} - {details} (Всего не работает: {failed})")
+            except Exception as e:
                 failed += 1
-                print(f"⚠️  [{checked}/{total}] Timeout")
+                print(f"⚠️  [{checked}/{total}] Timeout/Error: {str(e)[:30]}")
 
     print(f"\n{'='*70}")
     print(f"📊 РЕЗУЛЬТАТ:")
     print(f"   🏳️  Белый список: {len(white_keys)}")
     print(f"   🌍 Универсальные: {len(universal_keys)}")
     print(f"   ❌ Не работают: {failed}")
+    print(f"   📈 Успешных: {len(white_keys) + len(universal_keys)}/{total} ({((len(white_keys) + len(universal_keys))/total*100):.1f}%)")
     print(f"{'='*70}")
 
     return white_keys, universal_keys
@@ -654,7 +773,6 @@ def save_keys(white_keys: List[str], universal_keys: List[str]):
 
     # 2. My_Euro/euro_universal.txt и euro_black.txt
     if universal_keys:
-        # Разделим на черный список и универсальные (пока все в universal)
         euro_universal_file = os.path.join(CFG.EURO_DIR, "euro_universal.txt")
         with open(euro_universal_file, 'w', encoding='utf-8') as f:
             f.write('\n'.join(universal_keys))
@@ -687,8 +805,14 @@ def save_keys(white_keys: List[str], universal_keys: List[str]):
 # ==================== MAIN ====================
 def main():
     print("\n" + "="*70)
-    print(" VPN Checker v3.0 - Белый список + структура")
+    print(" VPN Checker v3.1 - УЛУЧШЕННАЯ ПРОВЕРКА СОЕДИНЕНИЙ")
     print("="*70)
+    print("\n📌 Что нового:")
+    print("   ✅ Проверка открытия SOCKS5 портов")
+    print("   ✅ Retry логика (2 попытки с задержкой)")
+    print("   ✅ Увеличенные таймауты (5s startup, 15s request)")
+    print("   ✅ Измерение времени ответа")
+    print("   ✅ Детальное логирование ошибок\n")
 
     if not os.path.exists(CFG.XRAY_PATH):
         print(f"\n❌ Xray не найден: {CFG.XRAY_PATH}")
