@@ -99,6 +99,7 @@ class Config:
                 "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/Vless-Reality-White-Lists-Rus-Mobile.txt",
                 "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/Vless-Reality-White-Lists-Rus-Mobile-2.txt",
                 "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS_mobile.txt",
+                "https://codeberg.org/LowiK/BypassWhitelistRu/raw/branch/main/WhiteList-Bypass_Ru.txt "
             ]
 
 CFG = Config()
