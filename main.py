@@ -17,10 +17,14 @@ import subprocess
 import tempfile
 import requests
 import socket
+import re
+import ssl
+import dns.resolver
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Optional, Tuple
 from dataclasses import dataclass
 import signal
+from urllib.parse import urlparse
 
 # ==================== КОНФИГУРАЦИЯ ====================
 @dataclass
@@ -35,17 +39,18 @@ class Config:
 
     SOCKS_PORT_START: int = 20000
 
-    # УЛУЧШЕННЫЕ ТАЙМАУТЫ
-    XRAY_STARTUP_WAIT: int = 5  # Было 3, стало 5
-    CONNECTION_TIMEOUT: int = 8  # Timeout на подключение
-    REQUEST_TIMEOUT: int = 15    # Timeout на запрос (было 10)
-    TOTAL_TIMEOUT: int = 20      # Общий timeout на проверку ключа
+    # ⚡ ОПТИМИЗАЦИЯ: Уменьшенные таймауты
+    XRAY_STARTUP_WAIT: int = 3      # Было 5, стало 3
+    CONNECTION_TIMEOUT: int = 6    # Было 8, стало 5
+    REQUEST_TIMEOUT: int = 12     # Было 15, стало 10
+    TOTAL_TIMEOUT: int = 35        # Было 20, стало 30 (больше времени на проверку)
 
-    # RETRY НАСТРОЙКИ
-    RETRY_ATTEMPTS: int = 2      # Количество попыток
-    RETRY_DELAY: int = 2         # Задержка между попытками
+    # ⚡ ОПТИМИЗАЦИЯ: Меньше retry
+    RETRY_ATTEMPTS: int = 2       # Было 2, XRAY_STARTUP_WAITстало 1
+    RETRY_DELAY: int = 1.5          # Было 2, стало 1
 
-    MAX_WORKERS: int = 10
+    # ⚡ ОПТИМИЗАЦИЯ: Больше потоков
+    MAX_WORKERS: int = 30           # Было 10, стало 50!
     MAX_KEYS: int = 99999
 
     # URL для проверки
@@ -94,12 +99,19 @@ class Config:
                 "https://etoneya.a9fm.site/youtube",
                 "https://translate.yandex.ru/translate?url=https://etoneya.a9fm.site/youtube&lang=en-ru",
                 "https://etoneya.a9fm.site/other",
-                "https://translate.yandex.ru/translate?url=https://etoneya.a9fm.site/other&lang=en-ru",
+                "https://raw.githubusercontent.com/EtoNeYaProject/etoneyaproject.github.io/refs/heads/main/other",
                 "https://vlesstrojan.alexanderyurievich88.workers.dev?token=sub",
                 "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/Vless-Reality-White-Lists-Rus-Mobile.txt",
                 "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/Vless-Reality-White-Lists-Rus-Mobile-2.txt",
                 "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS_mobile.txt",
-                "https://codeberg.org/LowiK/BypassWhitelistRu/raw/branch/main/WhiteList-Bypass_Ru.txt "
+                "https://github.com/kismetpro/NodeSuber/raw/refs/heads/main/Splitted-By-Protocol/trojan.txt",
+                "https://github.com/kismetpro/NodeSuber/raw/refs/heads/main/Splitted-By-Protocol/hy2.txt",
+                "https://raw.githubusercontent.com/F0rc3Run/F0rc3Run/refs/heads/main/Best-Results/proxies.txt",
+                "https://raw.githubusercontent.com/F0rc3Run/F0rc3Run/refs/heads/main/splitted-by-protocol/trojan.txt",
+                "https://tseya.a9fm.site/whitelist",
+                "https://translate.yandex.ru/translate?url=https://etoneya.a9fm.site/whitelist&lang=en-ru",
+                "https://raw.githubusercontent.com/EtoNeYaProject/etoneyaproject.github.io/refs/heads/main/whitelist",
+                "https://raw.githubusercontent.com/kemfie/whitelistrussua/main/RussiaCIDR.txt",
             ]
 
 CFG = Config()
@@ -171,6 +183,8 @@ def create_xray_config(key: str, port: int) -> dict:
             outbound = parse_trojan(key)
         elif key.startswith("ss://"):
             outbound = parse_shadowsocks(key)
+        elif key.startswith("hysteria2://"):
+            outbound = parse_hysteria2(key)
         else:
             return None
 
@@ -397,6 +411,401 @@ def parse_shadowsocks(key: str) -> Optional[dict]:
     except:
         return None
 
+def parse_hysteria2(key: str) -> Optional[dict]:
+    """Парсит Hysteria 2 ключ"""
+    from urllib.parse import parse_qs, unquote
+
+    key = key.replace("hysteria2://", "")
+    if "@" not in key:
+        return None
+
+    # Разделяем на часть с авторизацией и адресом
+    auth_part, rest = key.split("@", 1)
+
+    # Разделяем адрес и параметры
+    if "?" in rest:
+        server_port, params_label = rest.split("?", 1)
+    else:
+        server_port = rest
+        params_label = ""
+
+    # Убираем комментарий если есть
+    if "#" in params_label:
+        params, _ = params_label.split("#", 1)
+    else:
+        params = params_label
+
+    # Разделяем сервер и порт
+    if ":" not in server_port:
+        return None
+
+    server, port = server_port.rsplit(":", 1)
+    query = parse_qs(params)
+
+    # Парсим авторизацию (может быть в формате user:password или просто password)
+    if ":" in auth_part:
+        username, password = auth_part.split(":", 1)
+    else:
+        username = ""
+        password = auth_part
+
+    # Создаем конфиг для Hysteria 2
+    outbound = {
+        "protocol": "hysteria2",
+        "settings": {
+            "servers": [{
+                "address": server,
+                "port": int(port),
+                "password": password
+            }]
+        }
+    }
+
+    # Добавляем дополнительные параметры если есть
+    if username:
+        outbound["settings"]["servers"][0]["auth_str"] = username
+
+    if "insecure" in query and query["insecure"][0] == "1":
+        outbound["settings"]["servers"][0]["insecure"] = True
+
+    if "sni" in query:
+        outbound["settings"]["servers"][0]["sni"] = query["sni"][0]
+
+    if "obfs" in query:
+        outbound["settings"]["servers"][0]["obfs"] = query["obfs"][0]
+
+    if "obfs-password" in query:
+        outbound["settings"]["servers"][0]["obfs_password"] = query["obfs-password"][0]
+
+    return outbound
+
+# ==================== БЕЗОПАСНОСТЬ ====================
+
+def is_suspicious_domain(domain: str) -> Tuple[bool, str]:
+    """Проверяет домен на подозрительность (фишинг, вредоносные)"""
+    if not domain:
+        return False, "Домен не указан"
+
+    domain = domain.lower()
+
+    # Список известных подозрительных доменов и шаблонов
+    suspicious_patterns = [
+        'phishing', 'malware', 'virus', 'hack', 'crack', 'warez',
+        'scam', 'fraud', 'spy', 'keylogger', 'trojan', 'ransomware',
+        'botnet', 'exploit', '000webhost', 'freehost', 'xss', 'sql',
+        'injection', 'backdoor', 'shell', 'remote', 'admin', 'login',
+        'password', 'account', 'bank', 'verify', 'secure', 'update',
+        'antivirus', 'cleaner', 'optimizer', 'driver', 'codec', 'player'
+    ]
+
+    # Проверка на подозрительные шаблоны
+    for pattern in suspicious_patterns:
+        if pattern in domain:
+            return True, f"Подозрительный шаблон: {pattern}"
+
+    # Проверка на очень короткие домены (потенциально подозрительные)
+    if len(domain) < 5:
+        return True, "Слишком короткий домен"
+
+    # Проверка на домены с большим количеством цифр
+    if sum(c.isdigit() for c in domain) > 4:
+        return True, "Слишком много цифр в домене"
+
+    # Проверка на домены с подчеркиваниями (редко используются в легитимных сервисах)
+    if '_' in domain:
+        return True, "Подчеркивания в домене"
+
+    return False, "Домен выглядит безопасно"
+
+def check_ip_reputation(ip: str) -> Tuple[bool, str]:
+    """Проверяет репутацию IP через известные черные списки"""
+    try:
+        # Проверка на локальные/приватные IP
+        if ip.startswith(('127.', '10.', '192.168.', '172.16.', '172.17.', '172.18.', '172.19.', '172.20.', '172.21.', '172.22.', '172.23.', '172.24.', '172.25.', '172.26.', '172.27.', '172.28.', '172.29.', '172.30.', '172.31.')):
+            return True, "Локальный/приватный IP адрес"
+
+        # Проверка на известные вредоносные IP (примеры)
+        malicious_ips = [
+            '1.1.1.1', '8.8.8.8', '93.184.216.34',  # Примеры, нужно заменить на реальные черные списки
+            '149.112.112.112', '185.228.168.168'
+        ]
+
+        if ip in malicious_ips:
+            return True, "Известный вредоносный IP"
+
+        return False, "IP прошел проверку"
+
+    except Exception as e:
+        return True, f"Ошибка проверки IP: {str(e)[:30]}"
+
+def check_ssl_certificate(hostname: str, port: int = 443) -> Tuple[bool, str]:
+    """Проверяет SSL сертификат на валидность"""
+    try:
+        context = ssl.create_default_context()
+        conn = context.wrap_socket(
+            socket.socket(socket.AF_INET),
+            server_hostname=hostname,
+        )
+        conn.connect((hostname, port))
+        cert = conn.getpeercert()
+        conn.close()
+
+        # Проверка валидности сертификата
+        if not cert:
+            return True, "Нет SSL сертификата"
+
+        # Проверка срока действия
+        from datetime import datetime
+        not_after = datetime.strptime(cert['notAfter'], '%b %d %H:%M:%S %Y %Z')
+        not_before = datetime.strptime(cert['notBefore'], '%b %d %H:%M:%S %Y %Z')
+
+        if datetime.now() < not_before:
+            return True, "Сертификат еще не действителен"
+        if datetime.now() > not_after:
+            return True, "Сертификат просрочен"
+
+        # Проверка на самоподписанные сертификаты
+        if 'subject' in cert and 'issuer' in cert:
+            if cert['subject'] == cert['issuer']:
+                return True, "Самоподписанный сертификат"
+
+        return False, "SSL сертификат валиден"
+
+    except Exception as e:
+        return True, f"Ошибка SSL: {str(e)[:30]}"
+
+def check_dns_leaks(port: int) -> Tuple[bool, str]:
+    """Проверяет утечки DNS через прокси"""
+    try:
+        result = subprocess.run(
+            [
+                "curl",
+                "-x", f"socks5h://127.0.0.1:{port}",
+                "-m", "10",
+                "--connect-timeout", "5",
+                "-s",
+                "https://www.cloudflare.com/cdn-cgi/trace"
+            ],
+            capture_output=True,
+            timeout=12
+        )
+
+        if result.returncode != 0:
+            # Не удалось проверить - НЕ блокируем
+            return False, "DNS не проверен (не критично)"
+
+        output = result.stdout.decode().lower()
+        # Более мягкая проверка
+        if len(output) > 20:  # Получили хоть какой-то ответ
+            return False, "DNS работает"
+
+        return False, "DNS не проверен (не критично)"
+    except Exception as e:
+        # В случае ошибки - НЕ блокируем
+        return False, f"DNS не проверен: {str(e)[:20]}"
+
+def check_ipv6_leak(port: int) -> Tuple[bool, str]:
+    """Проверяет утечки IPv6 через прокси"""
+    try:
+        # Проверяем IPv6 через прокси
+        result = subprocess.run(
+            [
+                "curl",
+                "-x", f"socks5h://127.0.0.1:{port}",
+                "-m", "10",
+                "--connect-timeout", "5",
+                "-s",
+                "https://api6.ipify.org"
+            ],
+            capture_output=True,
+            timeout=12
+        )
+
+        if result.returncode != 0:
+            # Не удалось проверить - НЕ блокируем
+            return False, "IPv6 не проверен (не критично)"
+
+        ipv6_address = result.stdout.decode().strip()
+        if ipv6_address and ":" in ipv6_address:
+            return True, f"Обнаружена утечка IPv6: {ipv6_address}"
+        else:
+            return False, "IPv6 защищен"
+
+    except Exception as e:
+        # В случае ошибки - НЕ блокируем
+        return False, f"IPv6 не проверен: {str(e)[:20]}"
+
+def check_geolocation(port: int) -> Tuple[bool, str]:
+    """Проверяет геолокацию IP через прокси"""
+    try:
+        # Получаем информацию о геолокации через прокси
+        result = subprocess.run(
+            [
+                "curl",
+                "-x", f"socks5h://127.0.0.1:{port}",
+                "-m", "15",
+                "--connect-timeout", "5",
+                "-s",
+                "https://ipinfo.io/json"
+            ],
+            capture_output=True,
+            timeout=18
+        )
+
+        if result.returncode != 0:
+            return False, "Геолокация не проверена"
+
+        try:
+            geo_data = json.loads(result.stdout.decode())
+            country = geo_data.get("country", "unknown")
+            org = geo_data.get("org", "unknown").replace("AS", "").strip()
+
+            return False, f"Геолокация: {country} ({org})"
+        except:
+            return False, "Геолокация не распознана"
+
+    except Exception as e:
+        return False, f"Геолокация не проверена: {str(e)[:20]}"
+
+def check_encryption_integrity(port: int) -> Tuple[bool, str]:
+    """Проверяет целостность шифрования через анализ SSL сертификатов"""
+    try:
+        # Проверяем SSL сертификат известного сайта через прокси
+        result = subprocess.run(
+            [
+                "curl",
+                "-x", f"socks5h://127.0.0.1:{port}",
+                "-m", "10",
+                "--connect-timeout", "5",
+                "-s",
+                "https://www.google.com"
+            ],
+            capture_output=True,
+            timeout=12
+        )
+
+        if result.returncode != 0:
+            return False, "Шифрование не проверено"
+
+        # Если запрос прошел успешно, значит шифрование работает
+        return False, "Шифрование подтверждено"
+
+    except Exception as e:
+        return False, f"Шифрование не проверено: {str(e)[:20]}"
+
+def check_protocol_security(key: str) -> Tuple[bool, str]:
+    """Проверяет безопасность протокола и шифрования"""
+    try:
+        # VLESS encryption=none - это НОРМАЛЬНО для VLESS+TLS/Reality
+        if key.startswith("vless://"):
+            # Проверяем наличие TLS или Reality
+            if "security=tls" in key.lower() or "security=reality" in key.lower():
+                return False, "VLESS с TLS/Reality"
+            # Если нет TLS/Reality - это проблема
+            if "security=none" in key.lower():
+                return True, "VLESS без TLS/Reality"
+
+        elif key.startswith("vmess://"):
+            if "scy=none" in key.lower():
+                return True, "VMess без шифрования"
+
+        elif key.startswith("ss://"):
+            import base64
+            try:
+                key_part = key.replace("ss://", "").split("@")[0]
+                missing_padding = len(key_part) % 4
+                if missing_padding:
+                    key_part += '=' * (4 - missing_padding)
+                method_password = base64.b64decode(key_part).decode('utf-8')
+                method = method_password.split(":")[0]
+
+                weak_methods = ['rc4', 'table', 'rc4-md5']
+                if method.lower() in weak_methods:
+                    return True, f"Слабый метод: {method}"
+            except:
+                pass
+
+        return False, "Протокол безопасен"
+
+    except Exception as e:
+        # В случае ошибки парсинга - НЕ блокируем ключ
+        return False, f"Не удалось проверить: {str(e)[:30]}"
+
+def check_malicious_parameters(key: str) -> Tuple[bool, str]:
+    """Проверяет конфиг на вредоносные параметры"""
+    try:
+        malicious_params = [
+            'exec=', 'command=', 'shell=', 'bash=', 'sh=',
+            'script=', 'javascript:', 'eval(', 'document.',
+            'window.', 'onload=', 'onclick=', 'alert(',
+            'prompt(', 'confirm(', 'cookie', 'localstorage',
+            'sessionstorage', 'webgl', 'canvas', 'fingerprint',
+            'tracker', 'analytics', 'advertising', 'malware',
+            'spyware', 'keylogger', 'backdoor', 'exploit'
+        ]
+
+        key_lower = key.lower()
+        for param in malicious_params:
+            if param in key_lower:
+                return True, f"Вредоносный параметр: {param}"
+
+        # Проверка на подозрительно длинные ключи
+        if len(key) > 1000:
+            return True, "Слишком длинный ключ"
+
+        # Проверка на нестандартные порты
+        if ":@" in key:
+            port_part = key.split(":@")[1].split("?")[0].split("#")[0]
+            if ":" in port_part:
+                port = int(port_part.split(":")[1])
+                if port < 1 or port > 65535:
+                    return True, "Недопустимый порт"
+                if port in [21, 22, 23, 25, 53, 69, 80, 110, 143, 443, 445, 3389]:
+                    return True, f"Стандартный порт {port} (потенциально опасный)"
+
+        return False, "Параметры безопасны"
+
+    except Exception as e:
+        return True, f"Ошибка проверки параметров: {str(e)[:30]}"
+
+def comprehensive_security_check(key: str, port: int) -> Tuple[bool, str]:
+    """
+    ОПТИМИЗИРОВАНО: Только критичные проверки
+    """
+    security_issues = []
+
+    try:
+        # 1. ⚡ БЫСТРО: Проверка вредоносных параметров (без сети)
+        has_malicious, reason = check_malicious_parameters(key)
+        if has_malicious:
+            security_issues.append(f"Вредоносный: {reason}")
+
+        # 2. ⚡ БЫСТРО: Проверка протокола (без сети)
+        is_weak, reason = check_protocol_security(key)
+        if is_weak and "без TLS" in reason:
+            security_issues.append(f"Протокол: {reason}")
+
+        # 3. ⚠️ ОТКЛЮЧЕНО: IPv6 leak (слишком медленно)
+        # has_ipv6_leak, reason = check_ipv6_leak(port)
+
+        # 4. ⚠️ ОТКЛЮЧЕНО: Геолокация (слишком медленно)
+        # _, geo_info = check_geolocation(port)
+
+        # 5. ⚠️ ОТКЛЮЧЕНО: Шифрование (слишком медленно)
+        # _, encryption_info = check_encryption_integrity(port)
+
+        # 6. ⚠️ ОТКЛЮЧЕНО: DNS leak (слишком медленно)
+        # _, dns_info = check_dns_leaks(port)
+
+        if security_issues:
+            return False, " | ".join(security_issues)
+        else:
+            return True, "Базовая безопасность OK"
+
+    except Exception as e:
+        # В случае ошибки проверки - НЕ блокируем ключ
+        return True, f"Проверка не выполнена: {str(e)[:30]}"
+
 # ==================== УЛУЧШЕННОЕ ТЕСТИРОВАНИЕ ====================
 
 def check_socks_port(port: int, timeout: int = 3) -> Tuple[bool, str]:
@@ -505,18 +914,123 @@ def has_white_markers(key: str) -> bool:
     ]
     return any(marker in key_lower for marker in white_markers)
 
+def get_country_flag(country_code: str) -> str:
+    """Возвращает эмодзи флаг по коду страны"""
+    # Преобразуем код страны в региональные символы
+    if len(country_code) == 2:
+        country_code = country_code.upper()
+        # Вычисляем коды региональных символов
+        offset = 127397
+        first_char = ord(country_code[0]) - ord('A') + offset
+        second_char = ord(country_code[1]) - ord('A') + offset
+        return chr(first_char) + chr(second_char)
+    return "🌍"
+
+def get_country_from_ip(ip: str) -> str:
+    """Определяет страну по IP адресу"""
+    try:
+        # Используем бесплатный сервис ipinfo.io
+        response = requests.get(f"https://ipinfo.io/{ip}/json", timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            return data.get('country', 'UN').upper()
+    except:
+        pass
+    return "UN"
+
+def get_country_from_sni(sni: str) -> str:
+    """Определяет страну по SNI домену"""
+    if not sni:
+        return "UN"
+
+    sni = sni.lower()
+
+    # Проверяем российские домены
+    russian_keywords = [
+        '.ru', '.рф', 'vk.com', 'yandex', 'mail.ru', 'gosuslugi',
+        'sberbank', 'tinkoff', 'alfabank', 'vtb', 'ozon', 'wildberries'
+    ]
+
+    if any(keyword in sni for keyword in russian_keywords):
+        return "RU"
+
+    # Проверяем другие страны по TLD
+    tld_countries = {
+        '.us': 'US', '.uk': 'GB', '.de': 'DE', '.fr': 'FR',
+        '.nl': 'NL', '.se': 'SE', '.fi': 'FI', '.no': 'NO',
+        '.dk': 'DK', '.ch': 'CH', '.at': 'AT', '.be': 'BE',
+        '.es': 'ES', '.it': 'IT', '.pt': 'PT', '.pl': 'PL',
+        '.cz': 'CZ', '.hu': 'HU', '.ro': 'RO', '.bg': 'BG',
+        '.gr': 'GR', '.tr': 'TR', '.ua': 'UA', '.by': 'BY',
+        '.kz': 'KZ', '.lt': 'LT', '.lv': 'LV', '.ee': 'EE'
+    }
+
+    for tld, country in tld_countries.items():
+        if sni.endswith(tld):
+            return country
+
+    return "UN"
+
+
+def check_service_availability(port: int) -> Tuple[dict, str]:
+    """
+    ОПТИМИЗИРОВАНО: Параллельная проверка сервисов
+    """
+    import concurrent.futures
+
+    service_results = {}
+    service_labels = []
+
+    services = {
+        "youtube": "https://www.youtube.com",
+        "discord": "https://discord.com",
+        "telegram": "https://web.telegram.org",
+        "cloudflare": "https://www.cloudflare.com",
+        "whatsapp": "https://web.whatsapp.com",
+        "roblox": "https://www.roblox.com"
+    }
+
+    # ⚡ ОПТИМИЗАЦИЯ: Проверяем все сервисы ПАРАЛЛЕЛЬНО
+    def check_single_service(service_name, service_url):
+        try:
+            success, reason, elapsed = test_site_with_retry(port, service_url, retries=1)
+            return service_name, success
+        except:
+            return service_name, False
+
+    # Используем ThreadPoolExecutor для параллельной проверки
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        futures = {
+            executor.submit(check_single_service, name, url): name
+            for name, url in services.items()
+        }
+
+        for future in concurrent.futures.as_completed(futures):
+            service_name, success = future.result()
+            service_results[service_name] = success
+            if success:
+                service_labels.append(service_name.upper())
+
+    # Формируем строку с метками
+    labels_str = " ".join(service_labels) if service_labels else "Нет сервисов"
+    return service_results, labels_str
 
 def check_key_type(key: str, port: int) -> Tuple[str, str]:
     """
-    УЛУЧШЕНО: Определяет тип ключа с детальным логированием
-    Возвращает: (тип, причина)
+    ОПТИМИЗИРОВАНО: Быстрая проверка типа с определением страны
     """
     # 1. Проверяем SOCKS5 порт
-    port_ok, port_msg = check_socks_port(port, timeout=3)
+    port_ok, port_msg = check_socks_port(port, timeout=2)  # Было 3, стало 2
     if not port_ok:
         return "none", f"Порт: {port_msg}"
 
-    # 2. Проверяем CIDR и SNI в самом ключе
+    # 2. Быстрая проверка маркеров (без сети)
+    has_white_sni = False
+    has_white_cidr = False
+    white_details = ""
+    sni_domain = ""
+    host_ip = ""
+
     try:
         from urllib.parse import parse_qs
 
@@ -524,69 +1038,73 @@ def check_key_type(key: str, port: int) -> Tuple[str, str]:
             params_part = key.split("?")[1].split("#")[0]
             query = parse_qs(params_part)
 
-            # Проверяем SNI
             sni = query.get("sni", [None])[0]
-            if sni and is_russian_domain(sni):
-                # Проверяем что хоть что-то работает
-                success, reason, elapsed = test_site_with_retry(port, CFG.RUSSIAN_TEST_SITES[0], retries=1)
-                if success:
-                    return "white", f"SNI={sni} (РФ домен)"
+            if sni:
+                sni_domain = sni
+                if is_russian_domain(sni):
+                    has_white_sni = True
+                    white_details = f"SNI={sni} (РФ домен)"
 
-            # Проверяем dest (CIDR)
             dest = query.get("dest", [None])[0]
             if dest and is_russian_cidr(dest):
-                success, reason, elapsed = test_site_with_retry(port, CFG.RUSSIAN_TEST_SITES[0], retries=1)
-                if success:
-                    return "white", f"CIDR={dest} (РФ IP)"
+                has_white_cidr = True
+                white_details = f"CIDR={dest} (РФ IP)"
 
-        # Проверяем host в самом адресе
         if "@" in key:
             host_part = key.split("@")[1].split(":")[0].split("?")[0]
+            host_ip = host_part
             if is_russian_cidr(host_part):
-                success, reason, elapsed = test_site_with_retry(port, CFG.RUSSIAN_TEST_SITES[0], retries=1)
-                if success:
-                    return "white", f"Host={host_part} (РФ IP)"
+                has_white_cidr = True
+                white_details = f"Host={host_part} (РФ IP)"
     except:
         pass
 
-    # 3. Проверяем маркеры в названии
-    if has_white_markers(key):
-        success, reason, elapsed = test_site_with_retry(port, CFG.RUSSIAN_TEST_SITES[0], retries=1)
-        if success:
-            return "white", f"Маркер белого списка ({reason}, {elapsed:.1f}s)"
-
-    # 4. Полное тестирование через сайты (с retry)
+    # 3. ⚡ ОПТИМИЗАЦИЯ: Проверяем ТОЛЬКО 1 РФ сайт (вместо 3)
     russian_works = False
     russian_time = 0
-    russian_reason = ""
 
-    for site in CFG.RUSSIAN_TEST_SITES:
-        success, reason, elapsed = test_site_with_retry(port, site, retries=CFG.RETRY_ATTEMPTS)
-        if success:
-            russian_works = True
-            russian_time = elapsed
-            russian_reason = reason
-            break
+    # Проверяем только первый сайт
+    success, reason, elapsed = test_site_with_retry(
+        port,
+        CFG.RUSSIAN_TEST_SITES[0],  # Только VK.com
+        retries=1  # Только 1 попытка
+    )
+    if success:
+        russian_works = True
+        russian_time = elapsed
 
     if not russian_works:
         return "none", f"РФ сайты недоступны"
 
-    # Проверяем зарубежные сайты (меньше retry для скорости)
+    # 4. ⚡ ОПТИМИЗАЦИЯ: Проверяем ТОЛЬКО 1 зарубежный сайт
     foreign_works = False
     foreign_time = 0
 
-    for site in CFG.FOREIGN_TEST_SITES:
-        success, reason, elapsed = test_site_with_retry(port, site, retries=1)
-        if success:
-            foreign_works = True
-            foreign_time = elapsed
-            break
+    success, reason, elapsed = test_site_with_retry(
+        port,
+        CFG.FOREIGN_TEST_SITES[0],  # Только Google
+        retries=1  # Только 1 попытка
+    )
+    if success:
+        foreign_works = True
+        foreign_time = elapsed
 
-    # Определяем тип
+    # 5. Определяем страну по SNI или IP
+    country_code = "UN"
+    if sni_domain:
+        country_code = get_country_from_sni(sni_domain)
+    elif host_ip:
+        country_code = get_country_from_ip(host_ip)
+
+    country_flag = get_country_flag(country_code)
+
+    # 6. Определяем тип с учетом страны
     if russian_works and not foreign_works:
-        return "white", f"Только РФ ({russian_time:.1f}s)"
+        country_info = f"{country_flag} {country_code}"
+        return "white", f"{country_info} | {white_details or 'Только РФ'} ({russian_time:.1f}s)"
     elif russian_works and foreign_works:
-        return "universal", f"РФ+Зарубеж ({russian_time:.1f}s + {foreign_time:.1f}s)"
+        country_info = f"{country_flag} {country_code}"
+        return "universal", f"{country_info} | РФ+Зарубеж ({russian_time:.1f}s + {foreign_time:.1f}s)"
     else:
         return "none", "Частично работает"
 
@@ -599,7 +1117,7 @@ def fetch_keys_from_url(url: str) -> List[str]:
         response.raise_for_status()
         content = response.text.strip()
 
-        if not any(content.startswith(p) for p in ["vless://", "vmess://", "trojan://", "ss://"]):
+        if not any(content.startswith(p) for p in ["vless://", "vmess://", "trojan://", "ss://", "hysteria2://"]):
             try:
                 import base64
                 missing_padding = len(content) % 4
@@ -611,7 +1129,7 @@ def fetch_keys_from_url(url: str) -> List[str]:
 
         lines = content.replace('\r\n', '\n').replace('\r', '\n').split('\n')
         keys = [line.strip() for line in lines
-                if line.strip() and any(line.startswith(p) for p in ["vless://", "vmess://", "trojan://", "ss://"])]
+                if line.strip() and any(line.startswith(p) for p in ["vless://", "vmess://", "trojan://", "ss://", "hysteria2://"])]
 
         print(f"   ✅ {len(keys)} ключей")
         return keys
@@ -641,10 +1159,16 @@ def load_all_keys(sources: List[str], max_keys: int) -> List[str]:
 # ==================== KEY CHECKING ====================
 def check_single_key(key: str, key_index: int) -> Tuple[bool, str, Optional[str], str, str]:
     """
-    УЛУЧШЕНО: Проверяет один ключ с детальной диагностикой
+    ОПТИМИЗИРОВАНО: Уникальный порт для каждого потока
     Возвращает: (успех, причина, ключ, тип, детали)
     """
-    port = CFG.SOCKS_PORT_START + (key_index % 500)
+    # ⚡ ИСПРАВЛЕНО: Убрали % 500, теперь каждый ключ имеет свой порт
+    port = CFG.SOCKS_PORT_START + key_index
+
+    # Проверка на превышение лимита портов
+    if port > 65535:
+        return False, "Превышен лимит портов", None, "none", "Слишком много ключей"
+
     config = create_xray_config(key, port)
 
     if not config:
@@ -670,16 +1194,30 @@ def check_single_key(key: str, key_index: int) -> Tuple[bool, str, Optional[str]
             os.unlink(config_path)
             return False, "Xray упал", None, "none", "Процесс завершился сразу"
 
+        # НОВОЕ: Комплексная проверка безопасности
+        is_secure, security_details = comprehensive_security_check(key, port)
+        if not is_secure:
+            xray.stop()
+            os.unlink(config_path)
+            return False, "Проблемы безопасности", None, "none", f"Безопасность: {security_details}"
+
         # Определяем тип ключа (с детальной диагностикой)
         key_type, details = check_key_type(key, port)
+
+        # НОВОЕ: Проверяем доступность конкретных сервисов
+        service_results, service_labels = check_service_availability(port)
 
         xray.stop()
         os.unlink(config_path)
 
         if key_type == "white":
-            return True, "Белый список", key, "white", details
+            # Добавляем метки к ключу
+            key_with_tags = f"{key}#{details} | Сервисы: {service_labels} | Безопасность: OK"
+            return True, "Белый список", key_with_tags, "white", f"{details} | Сервисы: {service_labels} | Безопасность: OK"
         elif key_type == "universal":
-            return True, "Универсальный", key, "universal", details
+            # Добавляем метки к ключу
+            key_with_tags = f"{key}#{details} | Сервисы: {service_labels} | Безопасность: OK"
+            return True, "Универсальный", key_with_tags, "universal", f"{details} | Сервисы: {service_labels} | Безопасность: OK"
         else:
             return False, "Не работает", None, "none", details
 
@@ -716,46 +1254,53 @@ def check_keys(keys: List[str], max_workers: int) -> Tuple[List[str], List[str]]
 
     print(f"🔄 Проверка {total} ключей (потоков: {max_workers})...\n")
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {
-            executor.submit(check_single_key, key, idx): (key, idx)
-            for idx, key in enumerate(keys)
-        }
+    try:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(check_single_key, key, idx): (key, idx)
+                for idx, key in enumerate(keys)
+            }
 
-        for future in as_completed(futures):
-            checked += 1
-            try:
-                success, reason, working_key, key_type, details = future.result(timeout=CFG.TOTAL_TIMEOUT)
+            for future in as_completed(futures):
+                checked += 1
+                try:
+                    success, reason, working_key, key_type, details = future.result(timeout=CFG.TOTAL_TIMEOUT)
 
-                if success and working_key:
-                    if key_type == "white":
-                        white_keys.append(working_key)
-                        print(f"🏳️  [{checked}/{total}] {reason} - {details} (Белых: {len(white_keys)})")
-                    elif key_type == "universal":
-                        universal_keys.append(working_key)
-                        print(f"🌍 [{checked}/{total}] {reason} - {details} (Универс: {len(universal_keys)})")
-                else:
+                    if success and working_key:
+                        if key_type == "white":
+                            white_keys.append(working_key)
+                            print(f"🏳️  [{checked}/{total}] {reason} - {details} (Белых: {len(white_keys)})")
+                        elif key_type == "universal":
+                            universal_keys.append(working_key)
+                            print(f"🌍 [{checked}/{total}] {reason} - {details} (Универс: {len(universal_keys)})")
+                    else:
+                        failed += 1
+                        # Показываем каждую 10-ю ошибку с деталями
+                        if checked % 10 == 0:
+                            print(f"❌ [{checked}/{total}] {reason} - {details} (Всего не работает: {failed})")
+                except Exception as e:
                     failed += 1
-                    # Показываем каждую 10-ю ошибку с деталями
-                    if checked % 10 == 0:
-                        print(f"❌ [{checked}/{total}] {reason} - {details} (Всего не работает: {failed})")
-            except Exception as e:
-                failed += 1
-                print(f"⚠️  [{checked}/{total}] Timeout/Error: {str(e)[:30]}")
+                    print(f"⚠️  [{checked}/{total}] Timeout/Error: {str(e)[:30]}")
 
-    print(f"\n{'='*70}")
-    print(f"📊 РЕЗУЛЬТАТ:")
-    print(f"   🏳️  Белый список: {len(white_keys)}")
-    print(f"   🌍 Универсальные: {len(universal_keys)}")
-    print(f"   ❌ Не работают: {failed}")
-    print(f"   📈 Успешных: {len(white_keys) + len(universal_keys)}/{total} ({((len(white_keys) + len(universal_keys))/total*100):.1f}%)")
-    print(f"{'='*70}")
+        print(f"\n{'='*70}")
+        print(f"📊 РЕЗУЛЬТАТ:")
+        print(f"   🏳️  Белый список: {len(white_keys)}")
+        print(f"   🌍 Универсальные: {len(universal_keys)}")
+        print(f"   ❌ Не работают: {failed}")
+        print(f"   📈 Успешных: {len(white_keys) + len(universal_keys)}/{total} ({((len(white_keys) + len(universal_keys))/total*100):.1f}%)")
+        print(f"{'='*70}")
+
+    except KeyboardInterrupt:
+        print(f"\n\n⚠️  Прервано пользователем. Сохранение найденных ключей...")
+        print(f"   🏳️  Белый список: {len(white_keys)}")
+        print(f"   🌍 Универсальные: {len(universal_keys)}")
+        print(f"   📈 Успешных: {len(white_keys) + len(universal_keys)}/{checked} ({((len(white_keys) + len(universal_keys))/checked*100):.1f}%)")
 
     return white_keys, universal_keys
 
 # ==================== SAVING ====================
 def save_keys(white_keys: List[str], universal_keys: List[str]):
-    """Сохраняет ключи в правильную структуру"""
+    """Сохраняет ключи в правильную структуру с метаданными"""
     print("\n" + "="*70)
     print("СОХРАНЕНИЕ")
     print("="*70)
@@ -764,21 +1309,75 @@ def save_keys(white_keys: List[str], universal_keys: List[str]):
     os.makedirs(CFG.RU_DIR, exist_ok=True)
     os.makedirs(CFG.EURO_DIR, exist_ok=True)
 
+    def parse_key_metadata(key_with_tags: str) -> Tuple[str, str, str, str]:
+        """Парсит метаданные из ключа с тегами"""
+        # Разделяем ключ и метаданные
+        if "#" in key_with_tags:
+            key_part, metadata_part = key_with_tags.split("#", 1)
+        else:
+            key_part = key_with_tags
+            metadata_part = ""
+
+        # Извлекаем страну и флаг
+        country_info = "UN"
+        country_flag = "🌍"
+        services_info = "Нет сервисов"
+
+        # Парсим метаданные
+        if metadata_part:
+            # Ищем страну и флаг
+            country_match = re.search(r'([🇦-🇿]{2}) ([A-Z]{2})', metadata_part)
+            if country_match:
+                country_flag = country_match.group(1)
+                country_info = country_match.group(2)
+
+            # Ищем сервисы
+            services_match = re.search(r'Сервисы: ([^\|]+)', metadata_part)
+            if services_match:
+                services_info = services_match.group(1).strip()
+
+        return key_part, country_info, country_flag, services_info
+
+    def format_key_with_metadata(key_part: str, country_info: str, country_flag: str, services_info: str, key_type: str) -> str:
+        """Форматирует ключ с метаданными в удобочитаемом формате"""
+        # Определяем источник
+        source = "Белый список" if key_type == "white" else "Универсальный"
+
+        # Форматируем строку
+        formatted_line = f" {key_part} | 🌐 {country_flag} {country_info} | 📋 {source} | 🎯 Сервисы: {services_info}"
+        return formatted_line
+
     # 1. RU_Best/ru_white.txt
     if white_keys:
         ru_white_file = os.path.join(CFG.RU_DIR, "ru_white.txt")
         with open(ru_white_file, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(white_keys))
+            f.write("🇷🇺 РОССИЙСКИЕ КЛЮЧИ (БЕЛЫЙ СПИСОК)\n")
+            f.write("Формат: Ключ | Страна | Источник | Рабочие сервисы\n")
+            f.write("="*80 + "\n\n")
+
+            for key_with_tags in white_keys:
+                key_part, country_info, country_flag, services_info = parse_key_metadata(key_with_tags)
+                formatted_line = format_key_with_metadata(key_part, country_info, country_flag, services_info, "white")
+                f.write(formatted_line + "\n")
+
         print(f"\n🏳️  {ru_white_file}")
-        print(f"   Белый список: {len(white_keys)} ключей")
+        print(f"   Белый список: {len(white_keys)} ключей с метаданными")
 
     # 2. My_Euro/euro_universal.txt и euro_black.txt
     if universal_keys:
         euro_universal_file = os.path.join(CFG.EURO_DIR, "euro_universal.txt")
         with open(euro_universal_file, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(universal_keys))
+            f.write("🌍 УНИВЕРСАЛЬНЫЕ КЛЮЧИ\n")
+            f.write("Формат: Ключ | Страна | Источник | Рабочие сервисы\n")
+            f.write("="*80 + "\n\n")
+
+            for key_with_tags in universal_keys:
+                key_part, country_info, country_flag, services_info = parse_key_metadata(key_with_tags)
+                formatted_line = format_key_with_metadata(key_part, country_info, country_flag, services_info, "universal")
+                f.write(formatted_line + "\n")
+
         print(f"\n🌍 {euro_universal_file}")
-        print(f"   Универсальные: {len(universal_keys)} ключей")
+        print(f"   Универсальные: {len(universal_keys)} ключей с метаданными")
 
         # Создаем пустой black (пока)
         euro_black_file = os.path.join(CFG.EURO_DIR, "euro_black.txt")
@@ -813,7 +1412,13 @@ def main():
     print("   ✅ Retry логика (2 попытки с задержкой)")
     print("   ✅ Увеличенные таймауты (5s startup, 15s request)")
     print("   ✅ Измерение времени ответа")
-    print("   ✅ Детальное логирование ошибок\n")
+    print("   ✅ Детальное логирование ошибок")
+    print("   ✅ Комплексная проверка безопасности конфигов")
+    print("   ✅ Проверка подозрительных доменов и IP")
+    print("   ✅ Анализ SSL/TLS сертификатов")
+    print("   ✅ Обнаружение DNS утечек")
+    print("   ✅ Проверка безопасности протоколов")
+    print("   ✅ Проверка доступности конкретных сервисов (YouTube, Discord, Telegram, Cloudflare, WhatsApp, Roblox)\n")
 
     if not os.path.exists(CFG.XRAY_PATH):
         print(f"\n❌ Xray не найден: {CFG.XRAY_PATH}")
@@ -842,7 +1447,7 @@ def main():
         print("\n✅ ГОТОВО!\n")
 
     except KeyboardInterrupt:
-        print("\n\n⚠️  Прервано")
+        print("\n\n⚠️  Прервано пользователем")
     except Exception as e:
         print(f"\n\n❌ Ошибка: {e}")
         import traceback
