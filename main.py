@@ -41,16 +41,16 @@ class Config:
 
     # ⚡ ОПТИМИЗАЦИЯ: Уменьшенные таймауты
     XRAY_STARTUP_WAIT: int = 3      # Было 5, стало 3
-    CONNECTION_TIMEOUT: int = 6    # Было 8, стало 5
-    REQUEST_TIMEOUT: int = 12     # Было 15, стало 10
-    TOTAL_TIMEOUT: int = 35        # Было 20, стало 30 (больше времени на проверку)
+    CONNECTION_TIMEOUT: int = 5     # Было 8, стало 5
+    REQUEST_TIMEOUT: int = 10       # Было 15, стало 10
+    TOTAL_TIMEOUT: int = 30         # Было 20, стало 30 (больше времени на проверку)
 
     # ⚡ ОПТИМИЗАЦИЯ: Меньше retry
-    RETRY_ATTEMPTS: int = 2       # Было 2, XRAY_STARTUP_WAITстало 1
-    RETRY_DELAY: int = 1.5          # Было 2, стало 1
+    RETRY_ATTEMPTS: int = 1         # Было 2, стало 1
+    RETRY_DELAY: int = 1            # Было 2, стало 1
 
     # ⚡ ОПТИМИЗАЦИЯ: Больше потоков
-    MAX_WORKERS: int = 30           # Было 10, стало 50!
+    MAX_WORKERS: int = 50           # Было 10, стало 50!
     MAX_KEYS: int = 99999
 
     # URL для проверки
@@ -769,38 +769,42 @@ def check_malicious_parameters(key: str) -> Tuple[bool, str]:
         return True, f"Ошибка проверки параметров: {str(e)[:30]}"
 
 def comprehensive_security_check(key: str, port: int) -> Tuple[bool, str]:
-    """
-    ОПТИМИЗИРОВАНО: Только критичные проверки
-    """
+    """Выполняет комплексную проверку безопасности конфига"""
     security_issues = []
+    security_info = []
 
     try:
-        # 1. ⚡ БЫСТРО: Проверка вредоносных параметров (без сети)
+        # 1. Проверка КРИТИЧНЫХ вредоносных параметров
         has_malicious, reason = check_malicious_parameters(key)
         if has_malicious:
             security_issues.append(f"Вредоносный: {reason}")
 
-        # 2. ⚡ БЫСТРО: Проверка протокола (без сети)
+        # 2. Проверка протокола (только критичные проблемы)
         is_weak, reason = check_protocol_security(key)
-        if is_weak and "без TLS" in reason:
+        if is_weak and "без TLS" in reason:  # Блокируем только если совсем без защиты
             security_issues.append(f"Протокол: {reason}")
 
-        # 3. ⚠️ ОТКЛЮЧЕНО: IPv6 leak (слишком медленно)
-        # has_ipv6_leak, reason = check_ipv6_leak(port)
+        # 3. Проверка утечки IPv6 (критично)
+        has_ipv6_leak, reason = check_ipv6_leak(port)
+        if has_ipv6_leak:
+            security_issues.append(f"IPv6 утечка: {reason}")
 
-        # 4. ⚠️ ОТКЛЮЧЕНО: Геолокация (слишком медленно)
-        # _, geo_info = check_geolocation(port)
+        # 4. Проверка геолокации (информационно)
+        _, geo_info = check_geolocation(port)
+        security_info.append(f"Геолокация: {geo_info}")
 
-        # 5. ⚠️ ОТКЛЮЧЕНО: Шифрование (слишком медленно)
-        # _, encryption_info = check_encryption_integrity(port)
+        # 5. Проверка шифрования (информационно)
+        _, encryption_info = check_encryption_integrity(port)
+        security_info.append(f"Шифрование: {encryption_info}")
 
-        # 6. ⚠️ ОТКЛЮЧЕНО: DNS leak (слишком медленно)
-        # _, dns_info = check_dns_leaks(port)
+        # 6. Проверка DNS утечек (информационно)
+        _, dns_info = check_dns_leaks(port)
+        security_info.append(f"DNS: {dns_info}")
 
         if security_issues:
             return False, " | ".join(security_issues)
         else:
-            return True, "Базовая безопасность OK"
+            return True, "Базовая безопасность OK | " + " | ".join(security_info)
 
     except Exception as e:
         # В случае ошибки проверки - НЕ блокируем ключ
@@ -914,123 +918,50 @@ def has_white_markers(key: str) -> bool:
     ]
     return any(marker in key_lower for marker in white_markers)
 
-def get_country_flag(country_code: str) -> str:
-    """Возвращает эмодзи флаг по коду страны"""
-    # Преобразуем код страны в региональные символы
-    if len(country_code) == 2:
-        country_code = country_code.upper()
-        # Вычисляем коды региональных символов
-        offset = 127397
-        first_char = ord(country_code[0]) - ord('A') + offset
-        second_char = ord(country_code[1]) - ord('A') + offset
-        return chr(first_char) + chr(second_char)
-    return "🌍"
-
-def get_country_from_ip(ip: str) -> str:
-    """Определяет страну по IP адресу"""
-    try:
-        # Используем бесплатный сервис ipinfo.io
-        response = requests.get(f"https://ipinfo.io/{ip}/json", timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            return data.get('country', 'UN').upper()
-    except:
-        pass
-    return "UN"
-
-def get_country_from_sni(sni: str) -> str:
-    """Определяет страну по SNI домену"""
-    if not sni:
-        return "UN"
-
-    sni = sni.lower()
-
-    # Проверяем российские домены
-    russian_keywords = [
-        '.ru', '.рф', 'vk.com', 'yandex', 'mail.ru', 'gosuslugi',
-        'sberbank', 'tinkoff', 'alfabank', 'vtb', 'ozon', 'wildberries'
-    ]
-
-    if any(keyword in sni for keyword in russian_keywords):
-        return "RU"
-
-    # Проверяем другие страны по TLD
-    tld_countries = {
-        '.us': 'US', '.uk': 'GB', '.de': 'DE', '.fr': 'FR',
-        '.nl': 'NL', '.se': 'SE', '.fi': 'FI', '.no': 'NO',
-        '.dk': 'DK', '.ch': 'CH', '.at': 'AT', '.be': 'BE',
-        '.es': 'ES', '.it': 'IT', '.pt': 'PT', '.pl': 'PL',
-        '.cz': 'CZ', '.hu': 'HU', '.ro': 'RO', '.bg': 'BG',
-        '.gr': 'GR', '.tr': 'TR', '.ua': 'UA', '.by': 'BY',
-        '.kz': 'KZ', '.lt': 'LT', '.lv': 'LV', '.ee': 'EE'
-    }
-
-    for tld, country in tld_countries.items():
-        if sni.endswith(tld):
-            return country
-
-    return "UN"
-
 
 def check_service_availability(port: int) -> Tuple[dict, str]:
     """
-    ОПТИМИЗИРОВАНО: Параллельная проверка сервисов
+    НОВОЕ: Проверяет доступность конкретных сервисов через прокси
+    Возвращает: (словарь с результатами, строка с метками)
     """
-    import concurrent.futures
-
     service_results = {}
     service_labels = []
 
+    # Список сервисов для проверки
     services = {
         "youtube": "https://www.youtube.com",
         "discord": "https://discord.com",
         "telegram": "https://web.telegram.org",
-        "cloudflare": "https://www.cloudflare.com",
-        "whatsapp": "https://web.whatsapp.com",
-        "roblox": "https://www.roblox.com"
+        "cloudflare": "https://www.cloudflare.com"
     }
 
-    # ⚡ ОПТИМИЗАЦИЯ: Проверяем все сервисы ПАРАЛЛЕЛЬНО
-    def check_single_service(service_name, service_url):
+    for service_name, service_url in services.items():
         try:
             success, reason, elapsed = test_site_with_retry(port, service_url, retries=1)
-            return service_name, success
-        except:
-            return service_name, False
-
-    # Используем ThreadPoolExecutor для параллельной проверки
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-        futures = {
-            executor.submit(check_single_service, name, url): name
-            for name, url in services.items()
-        }
-
-        for future in concurrent.futures.as_completed(futures):
-            service_name, success = future.result()
             service_results[service_name] = success
             if success:
                 service_labels.append(service_name.upper())
+        except:
+            service_results[service_name] = False
 
     # Формируем строку с метками
-    labels_str = " ".join(service_labels) if service_labels else "Нет сервисов"
+    labels_str = " ".join(service_labels)
+    if not labels_str:
+        labels_str = "Нет сервисов"
+
     return service_results, labels_str
 
 def check_key_type(key: str, port: int) -> Tuple[str, str]:
     """
-    ОПТИМИЗИРОВАНО: Быстрая проверка типа с определением страны
+    УЛУЧШЕНО: Определяет тип ключа с детальным логированием и проверкой сервисов
+    Возвращает: (тип, причина)
     """
     # 1. Проверяем SOCKS5 порт
-    port_ok, port_msg = check_socks_port(port, timeout=2)  # Было 3, стало 2
+    port_ok, port_msg = check_socks_port(port, timeout=3)
     if not port_ok:
         return "none", f"Порт: {port_msg}"
 
-    # 2. Быстрая проверка маркеров (без сети)
-    has_white_sni = False
-    has_white_cidr = False
-    white_details = ""
-    sni_domain = ""
-    host_ip = ""
-
+    # 2. Проверяем CIDR и SNI в самом ключе
     try:
         from urllib.parse import parse_qs
 
@@ -1038,73 +969,69 @@ def check_key_type(key: str, port: int) -> Tuple[str, str]:
             params_part = key.split("?")[1].split("#")[0]
             query = parse_qs(params_part)
 
+            # Проверяем SNI
             sni = query.get("sni", [None])[0]
-            if sni:
-                sni_domain = sni
-                if is_russian_domain(sni):
-                    has_white_sni = True
-                    white_details = f"SNI={sni} (РФ домен)"
+            if sni and is_russian_domain(sni):
+                # Проверяем что хоть что-то работает
+                success, reason, elapsed = test_site_with_retry(port, CFG.RUSSIAN_TEST_SITES[0], retries=1)
+                if success:
+                    return "white", f"SNI={sni} (РФ домен)"
 
+            # Проверяем dest (CIDR)
             dest = query.get("dest", [None])[0]
             if dest and is_russian_cidr(dest):
-                has_white_cidr = True
-                white_details = f"CIDR={dest} (РФ IP)"
+                success, reason, elapsed = test_site_with_retry(port, CFG.RUSSIAN_TEST_SITES[0], retries=1)
+                if success:
+                    return "white", f"CIDR={dest} (РФ IP)"
 
+        # Проверяем host в самом адресе
         if "@" in key:
             host_part = key.split("@")[1].split(":")[0].split("?")[0]
-            host_ip = host_part
             if is_russian_cidr(host_part):
-                has_white_cidr = True
-                white_details = f"Host={host_part} (РФ IP)"
+                success, reason, elapsed = test_site_with_retry(port, CFG.RUSSIAN_TEST_SITES[0], retries=1)
+                if success:
+                    return "white", f"Host={host_part} (РФ IP)"
     except:
         pass
 
-    # 3. ⚡ ОПТИМИЗАЦИЯ: Проверяем ТОЛЬКО 1 РФ сайт (вместо 3)
+    # 3. Проверяем маркеры в названии
+    if has_white_markers(key):
+        success, reason, elapsed = test_site_with_retry(port, CFG.RUSSIAN_TEST_SITES[0], retries=1)
+        if success:
+            return "white", f"Маркер белого списка ({reason}, {elapsed:.1f}s)"
+
+    # 4. Полное тестирование через сайты (с retry)
     russian_works = False
     russian_time = 0
+    russian_reason = ""
 
-    # Проверяем только первый сайт
-    success, reason, elapsed = test_site_with_retry(
-        port,
-        CFG.RUSSIAN_TEST_SITES[0],  # Только VK.com
-        retries=1  # Только 1 попытка
-    )
-    if success:
-        russian_works = True
-        russian_time = elapsed
+    for site in CFG.RUSSIAN_TEST_SITES:
+        success, reason, elapsed = test_site_with_retry(port, site, retries=CFG.RETRY_ATTEMPTS)
+        if success:
+            russian_works = True
+            russian_time = elapsed
+            russian_reason = reason
+            break
 
     if not russian_works:
         return "none", f"РФ сайты недоступны"
 
-    # 4. ⚡ ОПТИМИЗАЦИЯ: Проверяем ТОЛЬКО 1 зарубежный сайт
+    # Проверяем зарубежные сайты (меньше retry для скорости)
     foreign_works = False
     foreign_time = 0
 
-    success, reason, elapsed = test_site_with_retry(
-        port,
-        CFG.FOREIGN_TEST_SITES[0],  # Только Google
-        retries=1  # Только 1 попытка
-    )
-    if success:
-        foreign_works = True
-        foreign_time = elapsed
+    for site in CFG.FOREIGN_TEST_SITES:
+        success, reason, elapsed = test_site_with_retry(port, site, retries=1)
+        if success:
+            foreign_works = True
+            foreign_time = elapsed
+            break
 
-    # 5. Определяем страну по SNI или IP
-    country_code = "UN"
-    if sni_domain:
-        country_code = get_country_from_sni(sni_domain)
-    elif host_ip:
-        country_code = get_country_from_ip(host_ip)
-
-    country_flag = get_country_flag(country_code)
-
-    # 6. Определяем тип с учетом страны
+    # Определяем тип
     if russian_works and not foreign_works:
-        country_info = f"{country_flag} {country_code}"
-        return "white", f"{country_info} | {white_details or 'Только РФ'} ({russian_time:.1f}s)"
+        return "white", f"Только РФ ({russian_time:.1f}s)"
     elif russian_works and foreign_works:
-        country_info = f"{country_flag} {country_code}"
-        return "universal", f"{country_info} | РФ+Зарубеж ({russian_time:.1f}s + {foreign_time:.1f}s)"
+        return "universal", f"РФ+Зарубеж ({russian_time:.1f}s + {foreign_time:.1f}s)"
     else:
         return "none", "Частично работает"
 
@@ -1159,16 +1086,10 @@ def load_all_keys(sources: List[str], max_keys: int) -> List[str]:
 # ==================== KEY CHECKING ====================
 def check_single_key(key: str, key_index: int) -> Tuple[bool, str, Optional[str], str, str]:
     """
-    ОПТИМИЗИРОВАНО: Уникальный порт для каждого потока
+    УЛУЧШЕНО: Проверяет один ключ с детальной диагностикой, проверкой безопасности и сервисов
     Возвращает: (успех, причина, ключ, тип, детали)
     """
-    # ⚡ ИСПРАВЛЕНО: Убрали % 500, теперь каждый ключ имеет свой порт
-    port = CFG.SOCKS_PORT_START + key_index
-
-    # Проверка на превышение лимита портов
-    if port > 65535:
-        return False, "Превышен лимит портов", None, "none", "Слишком много ключей"
-
+    port = CFG.SOCKS_PORT_START + (key_index % 500)
     config = create_xray_config(key, port)
 
     if not config:
@@ -1211,13 +1132,9 @@ def check_single_key(key: str, key_index: int) -> Tuple[bool, str, Optional[str]
         os.unlink(config_path)
 
         if key_type == "white":
-            # Добавляем метки к ключу
-            key_with_tags = f"{key}#{details} | Сервисы: {service_labels} | Безопасность: OK"
-            return True, "Белый список", key_with_tags, "white", f"{details} | Сервисы: {service_labels} | Безопасность: OK"
+            return True, "Белый список", key, "white", f"{details} | Сервисы: {service_labels} | Безопасность: OK"
         elif key_type == "universal":
-            # Добавляем метки к ключу
-            key_with_tags = f"{key}#{details} | Сервисы: {service_labels} | Безопасность: OK"
-            return True, "Универсальный", key_with_tags, "universal", f"{details} | Сервисы: {service_labels} | Безопасность: OK"
+            return True, "Универсальный", key, "universal", f"{details} | Сервисы: {service_labels} | Безопасность: OK"
         else:
             return False, "Не работает", None, "none", details
 
@@ -1254,53 +1171,46 @@ def check_keys(keys: List[str], max_workers: int) -> Tuple[List[str], List[str]]
 
     print(f"🔄 Проверка {total} ключей (потоков: {max_workers})...\n")
 
-    try:
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {
-                executor.submit(check_single_key, key, idx): (key, idx)
-                for idx, key in enumerate(keys)
-            }
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(check_single_key, key, idx): (key, idx)
+            for idx, key in enumerate(keys)
+        }
 
-            for future in as_completed(futures):
-                checked += 1
-                try:
-                    success, reason, working_key, key_type, details = future.result(timeout=CFG.TOTAL_TIMEOUT)
+        for future in as_completed(futures):
+            checked += 1
+            try:
+                success, reason, working_key, key_type, details = future.result(timeout=CFG.TOTAL_TIMEOUT)
 
-                    if success and working_key:
-                        if key_type == "white":
-                            white_keys.append(working_key)
-                            print(f"🏳️  [{checked}/{total}] {reason} - {details} (Белых: {len(white_keys)})")
-                        elif key_type == "universal":
-                            universal_keys.append(working_key)
-                            print(f"🌍 [{checked}/{total}] {reason} - {details} (Универс: {len(universal_keys)})")
-                    else:
-                        failed += 1
-                        # Показываем каждую 10-ю ошибку с деталями
-                        if checked % 10 == 0:
-                            print(f"❌ [{checked}/{total}] {reason} - {details} (Всего не работает: {failed})")
-                except Exception as e:
+                if success and working_key:
+                    if key_type == "white":
+                        white_keys.append(working_key)
+                        print(f"🏳️  [{checked}/{total}] {reason} - {details} (Белых: {len(white_keys)})")
+                    elif key_type == "universal":
+                        universal_keys.append(working_key)
+                        print(f"🌍 [{checked}/{total}] {reason} - {details} (Универс: {len(universal_keys)})")
+                else:
                     failed += 1
-                    print(f"⚠️  [{checked}/{total}] Timeout/Error: {str(e)[:30]}")
+                    # Показываем каждую 10-ю ошибку с деталями
+                    if checked % 10 == 0:
+                        print(f"❌ [{checked}/{total}] {reason} - {details} (Всего не работает: {failed})")
+            except Exception as e:
+                failed += 1
+                print(f"⚠️  [{checked}/{total}] Timeout/Error: {str(e)[:30]}")
 
-        print(f"\n{'='*70}")
-        print(f"📊 РЕЗУЛЬТАТ:")
-        print(f"   🏳️  Белый список: {len(white_keys)}")
-        print(f"   🌍 Универсальные: {len(universal_keys)}")
-        print(f"   ❌ Не работают: {failed}")
-        print(f"   📈 Успешных: {len(white_keys) + len(universal_keys)}/{total} ({((len(white_keys) + len(universal_keys))/total*100):.1f}%)")
-        print(f"{'='*70}")
-
-    except KeyboardInterrupt:
-        print(f"\n\n⚠️  Прервано пользователем. Сохранение найденных ключей...")
-        print(f"   🏳️  Белый список: {len(white_keys)}")
-        print(f"   🌍 Универсальные: {len(universal_keys)}")
-        print(f"   📈 Успешных: {len(white_keys) + len(universal_keys)}/{checked} ({((len(white_keys) + len(universal_keys))/checked*100):.1f}%)")
+    print(f"\n{'='*70}")
+    print(f"📊 РЕЗУЛЬТАТ:")
+    print(f"   🏳️  Белый список: {len(white_keys)}")
+    print(f"   🌍 Универсальные: {len(universal_keys)}")
+    print(f"   ❌ Не работают: {failed}")
+    print(f"   📈 Успешных: {len(white_keys) + len(universal_keys)}/{total} ({((len(white_keys) + len(universal_keys))/total*100):.1f}%)")
+    print(f"{'='*70}")
 
     return white_keys, universal_keys
 
 # ==================== SAVING ====================
 def save_keys(white_keys: List[str], universal_keys: List[str]):
-    """Сохраняет ключи в правильную структуру с метаданными"""
+    """Сохраняет ключи в правильную структуру"""
     print("\n" + "="*70)
     print("СОХРАНЕНИЕ")
     print("="*70)
@@ -1309,75 +1219,21 @@ def save_keys(white_keys: List[str], universal_keys: List[str]):
     os.makedirs(CFG.RU_DIR, exist_ok=True)
     os.makedirs(CFG.EURO_DIR, exist_ok=True)
 
-    def parse_key_metadata(key_with_tags: str) -> Tuple[str, str, str, str]:
-        """Парсит метаданные из ключа с тегами"""
-        # Разделяем ключ и метаданные
-        if "#" in key_with_tags:
-            key_part, metadata_part = key_with_tags.split("#", 1)
-        else:
-            key_part = key_with_tags
-            metadata_part = ""
-
-        # Извлекаем страну и флаг
-        country_info = "UN"
-        country_flag = "🌍"
-        services_info = "Нет сервисов"
-
-        # Парсим метаданные
-        if metadata_part:
-            # Ищем страну и флаг
-            country_match = re.search(r'([🇦-🇿]{2}) ([A-Z]{2})', metadata_part)
-            if country_match:
-                country_flag = country_match.group(1)
-                country_info = country_match.group(2)
-
-            # Ищем сервисы
-            services_match = re.search(r'Сервисы: ([^\|]+)', metadata_part)
-            if services_match:
-                services_info = services_match.group(1).strip()
-
-        return key_part, country_info, country_flag, services_info
-
-    def format_key_with_metadata(key_part: str, country_info: str, country_flag: str, services_info: str, key_type: str) -> str:
-        """Форматирует ключ с метаданными в удобочитаемом формате"""
-        # Определяем источник
-        source = "Белый список" if key_type == "white" else "Универсальный"
-
-        # Форматируем строку
-        formatted_line = f" {key_part} | 🌐 {country_flag} {country_info} | 📋 {source} | 🎯 Сервисы: {services_info}"
-        return formatted_line
-
     # 1. RU_Best/ru_white.txt
     if white_keys:
         ru_white_file = os.path.join(CFG.RU_DIR, "ru_white.txt")
         with open(ru_white_file, 'w', encoding='utf-8') as f:
-            f.write("🇷🇺 РОССИЙСКИЕ КЛЮЧИ (БЕЛЫЙ СПИСОК)\n")
-            f.write("Формат: Ключ | Страна | Источник | Рабочие сервисы\n")
-            f.write("="*80 + "\n\n")
-
-            for key_with_tags in white_keys:
-                key_part, country_info, country_flag, services_info = parse_key_metadata(key_with_tags)
-                formatted_line = format_key_with_metadata(key_part, country_info, country_flag, services_info, "white")
-                f.write(formatted_line + "\n")
-
+            f.write('\n'.join(white_keys))
         print(f"\n🏳️  {ru_white_file}")
-        print(f"   Белый список: {len(white_keys)} ключей с метаданными")
+        print(f"   Белый список: {len(white_keys)} ключей")
 
     # 2. My_Euro/euro_universal.txt и euro_black.txt
     if universal_keys:
         euro_universal_file = os.path.join(CFG.EURO_DIR, "euro_universal.txt")
         with open(euro_universal_file, 'w', encoding='utf-8') as f:
-            f.write("🌍 УНИВЕРСАЛЬНЫЕ КЛЮЧИ\n")
-            f.write("Формат: Ключ | Страна | Источник | Рабочие сервисы\n")
-            f.write("="*80 + "\n\n")
-
-            for key_with_tags in universal_keys:
-                key_part, country_info, country_flag, services_info = parse_key_metadata(key_with_tags)
-                formatted_line = format_key_with_metadata(key_part, country_info, country_flag, services_info, "universal")
-                f.write(formatted_line + "\n")
-
+            f.write('\n'.join(universal_keys))
         print(f"\n🌍 {euro_universal_file}")
-        print(f"   Универсальные: {len(universal_keys)} ключей с метаданными")
+        print(f"   Универсальные: {len(universal_keys)} ключей")
 
         # Создаем пустой black (пока)
         euro_black_file = os.path.join(CFG.EURO_DIR, "euro_black.txt")
@@ -1418,7 +1274,7 @@ def main():
     print("   ✅ Анализ SSL/TLS сертификатов")
     print("   ✅ Обнаружение DNS утечек")
     print("   ✅ Проверка безопасности протоколов")
-    print("   ✅ Проверка доступности конкретных сервисов (YouTube, Discord, Telegram, Cloudflare, WhatsApp, Roblox)\n")
+    print("   ✅ Проверка доступности конкретных сервисов (YouTube, Discord, Telegram, Cloudflare)\n")
 
     if not os.path.exists(CFG.XRAY_PATH):
         print(f"\n❌ Xray не найден: {CFG.XRAY_PATH}")
@@ -1447,7 +1303,7 @@ def main():
         print("\n✅ ГОТОВО!\n")
 
     except KeyboardInterrupt:
-        print("\n\n⚠️  Прервано пользователем")
+        print("\n\n⚠️  Прервано")
     except Exception as e:
         print(f"\n\n❌ Ошибка: {e}")
         import traceback
