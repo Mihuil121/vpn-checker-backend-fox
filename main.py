@@ -112,6 +112,9 @@ class Config:
                 "https://translate.yandex.ru/translate?url=https://etoneya.a9fm.site/whitelist&lang=en-ru",
                 "https://raw.githubusercontent.com/EtoNeYaProject/etoneyaproject.github.io/refs/heads/main/whitelist",
                 "https://raw.githubusercontent.com/kemfie/whitelistrussua/main/RussiaCIDR.txt",
+                "https://bp.wl.free.nf/confs/wl.txt"
+                "https://raw.githubusercontent.com/CidVpn/cid-vpn-config/refs/heads/main/general.txt",
+                "https://storage.yandexcloud.net/cid-vpn/whitelist.txt",
             ]
 
 CFG = Config()
