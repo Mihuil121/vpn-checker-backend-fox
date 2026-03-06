@@ -51,7 +51,7 @@ class Config:
 
     # ⚡ ОПТИМИЗАЦИЯ: Больше потоков
     MAX_WORKERS: int = 50           # Было 10, стало 50!
-    MAX_KEYS: int = 99999
+    MAX_KEYS: int = 5000
 
     # URL для проверки
     RUSSIAN_TEST_SITES: List[str] = None
@@ -115,6 +115,31 @@ class Config:
                 "https://bp.wl.free.nf/confs/wl.txt"
                 "https://raw.githubusercontent.com/CidVpn/cid-vpn-config/refs/heads/main/general.txt",
                 "https://storage.yandexcloud.net/cid-vpn/whitelist.txt",
+                "https://raw.githubusercontent.com/MahsaNetConfigTopic/config/refs/heads/main/xray_final.txt",
+                "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/refs/heads/main/Subscriptions/Sub1.txt",
+                "https://raw.githubusercontent.com/RKPchannel/RKP_bypass_configs/refs/heads/main/configs/url_work.txt",
+                "https://gbr.mydan.online/configs",
+                "https://raw.githubusercontent.com/Maskkost93/kizyak-vpn-4.0/refs/heads/main/kizyaktestru.txt",
+                "https://shz.al/YzPN:/~sorensub,subSHABTJK",
+                "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/refs/heads/main/all_configs.txt",
+                "https://raw.githubusercontent.com/restlycames/RestlyConnect_sub/refs/heads/main/free_vless_servers.txt",
+                "https://raw.githubusercontent.com/SilentGhostCodes/WhiteListVpn/refs/heads/main/BlackList.txt",
+                "https://raw.githubusercontent.com/SilentGhostCodes/WhiteListVpn/refs/heads/main/Whitelist.txt",
+                "https://raw.githubusercontent.com/MatinGhanbari/v2ray-configs/25bb2a9ec2721b62dd3ce3e5b0e12fbacf041f67/subscriptions/v2ray/subs/sub10.txt",
+                "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/ee6d4bfcb84d006d669d5c38a3111b42917171a2/BLACK_VLESS_RUS.txt",
+                "https://raw.githubusercontent.com/nikita29a/FreeProxyList/refs/heads/main/mirror/21.txt",
+                "https://raw.githubusercontent.com/nikita29a/FreeProxyList/refs/heads/main/mirror/25.txt",
+                "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/WHITE-CIDR-RU-checked.txt",
+                "https://raw.githubusercontent.com/Egkaz/Proxy-list-20k-server/refs/heads/main/all_servers.txt",
+                "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/refs/heads/main/Protocols/trojan.txt",
+                "https://raw.githubusercontent.com/Surfboardv2ray/TGParse/main/python/hy2",
+                "https://raw.githubusercontent.com/Surfboardv2ray/TGParse/main/python/hysteria2",
+                "https://raw.githubusercontent.com/Surfboardv2ray/TGParse/main/splitted/trojan",
+                "https://raw.githubusercontent.com/MhdiTaheri/V2rayCollector/refs/heads/main/sub/trojan",
+                "https://raw.githubusercontent.com/Argh94/V2RayAutoConfig/refs/heads/main/configs/Hysteria2.txt",
+                "https://raw.githubusercontent.com/Farid-Karimi/Config-Collector/main/vless_iran.txt",
+                "https://raw.githubusercontent.com/hamedp-71/Sub_Checker_Creator/refs/heads/main/final.txt",
+                "https://raw.githubusercontent.com/MatinGhanbari/v2ray-configs/main/subscriptions/filtered/subs/vless.txt",
             ]
 
 CFG = Config()
