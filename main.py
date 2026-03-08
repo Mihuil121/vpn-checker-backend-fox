@@ -51,7 +51,7 @@ class Config:
 
     # ⚡ ОПТИМИЗАЦИЯ: Больше потоков
     MAX_WORKERS: int = 50           # Было 10, стало 50!
-    MAX_KEYS: int = 5000
+    MAX_KEYS: int = 999999
 
     # URL для проверки
     RUSSIAN_TEST_SITES: List[str] = None
@@ -140,6 +140,36 @@ class Config:
                 "https://raw.githubusercontent.com/Farid-Karimi/Config-Collector/main/vless_iran.txt",
                 "https://raw.githubusercontent.com/hamedp-71/Sub_Checker_Creator/refs/heads/main/final.txt",
                 "https://raw.githubusercontent.com/MatinGhanbari/v2ray-configs/main/subscriptions/filtered/subs/vless.txt",
+                "https://raw.githubusercontent.com/Kwinshadow/TelegramV2rayCollector/main/sublinks/vless.txt",
+                "https://raw.githubusercontent.com/barry-far/V2ray-config/main/Sub4.txt",
+                "https://raw.githubusercontent.com/barry-far/V2ray-config/main/Sub6.txt",
+                "https://raw.githubusercontent.com/barry-far/V2ray-config/main/Splitted-By-Protocol/trojan.txt",
+                "https://raw.githubusercontent.com/barry-far/V2ray-config/main/Splitted-By-Protocol/ss.txt",
+                "https://raw.githubusercontent.com/Kwinshadow/TelegramV2rayCollector/main/sublinks/trojan.txt",
+                "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/refs/heads/main/Protocols/vless.txt",
+                "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/refs/heads/main/Protocols/ss.txt",
+                "https://sub-001.dns-on-fire.net/api/sub/6YsWHg3rCTdXJ8GA",
+                "https://gist.githubusercontent.com/Syavar/3e76222fc05fde9abcb35c2f24572021/raw/e2f7ef901ae4ba5bab7bef20adef41bead7ba626/gistfile1.txt",
+                "https://jsnegsukavsos.hb.ru-msk.vkcloud-storage.ru/love",
+                "https://shz.al/7XRh:/~2025/SORENWARP&TUIC",
+                "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_SS+All_RUS.txt",
+                "https://shz.al/hWYz:/~sorensub/hy2&vless",
+                "https://sub-001.dns-on-fire.net/api/sub/FhFLNWo1Ngyt6g6e",
+                "https://sub-001.dns-on-fire.net/api/sub/T7VH-WaFkzDrcyRE",
+                "https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/refs/heads/main/githubmirror/1.txt",
+                "https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/refs/heads/main/githubmirror/2.txt",
+                "https://raw.githubusercontent.com/Epodonios/v2ray-configs/refs/heads/main/Sub1.txt",
+                "https://raw.githubusercontent.com/roosterkid/openproxylist/main/V2RAY_RAW.txt",
+                "https://raw.githubusercontent.com/Epodonios/v2ray-configs/main/All_Configs_Sub.txt",
+                "https://raw.githubusercontent.com/mahdibland/V2RayAggregator/refs/heads/master/Eternity.txt",
+                "https://raw.githubusercontent.com/sakha1370/OpenRay/refs/heads/main/output/country/DE.txt",
+                "https://raw.githubusercontent.com/sevcator/5ubscrpt10n/refs/heads/main/working/countries/Armenia.txt",
+                "https://raw.githubusercontent.com/sakha1370/OpenRay/refs/heads/main/output/country/HU.txt",
+                "https://raw.githubusercontent.com/sevcator/5ubscrpt10n/refs/heads/main/working/countries/Kazakhstan.txt",
+                "https://raw.githubusercontent.com/sevcator/5ubscrpt10n/refs/heads/main/working/countries/United%20Nations.txt",
+                "http://allvpn.x10.mx/sub.php",
+                "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Mobile-2.txt",
+                "https://raw.githubusercontent.com/VP01596/vless-top15/refs/heads/main/top100.txt",
             ]
 
 CFG = Config()
