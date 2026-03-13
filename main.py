@@ -15,6 +15,7 @@ import json
 import time
 import subprocess
 import tempfile
+import shutil
 import requests
 import socket
 import re
@@ -537,6 +538,108 @@ def parse_hysteria2(key: str) -> Optional[dict]:
 
     return outbound
 
+
+def get_hy2_binary() -> Optional[str]:
+    """Возвращает путь к клиенту Hysteria2 (hy2 или hysteria), если установлен."""
+    for name in ("hy2", "hysteria"):
+        path = shutil.which(name)
+        if path:
+            return path
+    return None
+
+
+def create_hysteria2_yaml_config(key: str, listen_port: int) -> str:
+    """Создаёт YAML-конфиг для клиента Hysteria2 (hy2/hysteria)."""
+    # Клиент поддерживает server в виде полного URI
+    server_uri = key.strip()
+    if not server_uri.startswith("hysteria2://"):
+        server_uri = "hysteria2://" + server_uri
+    lines = [
+        "server: " + repr(server_uri),
+        "socks5:",
+        "  listen: 127.0.0.1:" + str(listen_port),
+    ]
+    return "\n".join(lines)
+
+
+def check_hysteria2_key(key: str, port: int, key_index: int) -> Tuple[bool, str, Optional[str], str, str]:
+    """
+    Проверяет ключ Hysteria2 через клиент hy2/hysteria (Xray Hysteria2 не поддерживает).
+    Возвращает: (успех, причина, ключ, тип, детали).
+    """
+    hy2_bin = get_hy2_binary()
+    if not hy2_bin:
+        return False, "Hysteria2: не установлен hy2/hysteria", None, "none", "Установите hy2 для проверки"
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        f.write(create_hysteria2_yaml_config(key, port))
+        config_path = f.name
+
+    process = None
+    try:
+        process = subprocess.Popen(
+            [hy2_bin, "-c", config_path],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            preexec_fn=os.setsid,
+        )
+        time.sleep(CFG.XRAY_STARTUP_WAIT)
+
+        if process.poll() is not None:
+            os.unlink(config_path)
+            return False, "Hysteria2: процесс завершился", None, "none", "Клиент hy2 не запустился"
+
+        # Проверяем SOCKS5
+        port_ok, _ = check_socks_port(port, timeout=3)
+        if not port_ok:
+            try:
+                os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+            except Exception:
+                pass
+            os.unlink(config_path)
+            return False, "Hysteria2: порт не открыт", None, "none", "SOCKS5 недоступен"
+
+        # Проверяем доступность сайтов (РФ и зарубеж)
+        russian_works = False
+        for site in CFG.RUSSIAN_TEST_SITES:
+            success, _, _ = test_site_with_retry(port, site, retries=1)
+            if success:
+                russian_works = True
+                break
+
+        foreign_works = False
+        for site in CFG.FOREIGN_TEST_SITES:
+            success, _, _ = test_site_with_retry(port, site, retries=1)
+            if success:
+                foreign_works = True
+                break
+
+        try:
+            os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+        except Exception:
+            pass
+        os.unlink(config_path)
+
+        if russian_works and not foreign_works:
+            return True, "Белый список", key, "white", "Hysteria2: только РФ"
+        elif russian_works and foreign_works:
+            return True, "Универсальный", key, "universal", "Hysteria2: РФ+Зарубеж"
+        else:
+            return False, "Не работает", None, "none", "Hysteria2: сайты недоступны"
+
+    except Exception as e:
+        if process and process.poll() is None:
+            try:
+                os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+            except Exception:
+                pass
+        try:
+            os.unlink(config_path)
+        except Exception:
+            pass
+        return False, "Hysteria2: ошибка", None, "none", str(e)[:50]
+
+
 # ==================== БЕЗОПАСНОСТЬ ====================
 
 def is_suspicious_domain(domain: str) -> Tuple[bool, str]:
@@ -752,18 +855,9 @@ def check_encryption_integrity(port: int) -> Tuple[bool, str]:
         return False, f"Шифрование не проверено: {str(e)[:20]}"
 
 def check_protocol_security(key: str) -> Tuple[bool, str]:
-    """Проверяет безопасность протокола и шифрования"""
+    """Проверяет безопасность протокола и шифрования (без проверки VLESS TLS/Reality — есть методы обхода)"""
     try:
-        # VLESS encryption=none - это НОРМАЛЬНО для VLESS+TLS/Reality
-        if key.startswith("vless://"):
-            # Проверяем наличие TLS или Reality
-            if "security=tls" in key.lower() or "security=reality" in key.lower():
-                return False, "VLESS с TLS/Reality"
-            # Если нет TLS/Reality - это проблема
-            if "security=none" in key.lower():
-                return True, "VLESS без TLS/Reality"
-
-        elif key.startswith("vmess://"):
+        if key.startswith("vmess://"):
             if "scy=none" in key.lower():
                 return True, "VMess без шифрования"
 
@@ -1097,8 +1191,42 @@ def check_key_type(key: str, port: int) -> Tuple[str, str]:
 def fetch_keys_from_url(url: str) -> List[str]:
     """Загружает ключи из URL"""
     try:
+        from urllib.parse import urlparse, parse_qs, unquote
+
+        # Yandex translate часто отдает 403 с turbopages — берем оригинальный url=...
+        try:
+            parsed = urlparse(url)
+            if parsed.netloc == "translate.yandex.ru" and parsed.path.startswith("/translate"):
+                q = parse_qs(parsed.query)
+                original = q.get("url", [None])[0]
+                if original:
+                    url = unquote(original)
+        except Exception:
+            pass
+
         print(f"📥 {url[:60]}...")
-        response = requests.get(url, timeout=30)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36",
+            "Accept": "text/plain,text/html,application/octet-stream,*/*",
+            "Accept-Language": "ru,en;q=0.9",
+            "Connection": "close",
+        }
+
+        # Retry для медленных источников
+        last_err = None
+        response = None
+        for attempt in range(3):
+            try:
+                response = requests.get(url, timeout=45, headers=headers, allow_redirects=True)
+                response.raise_for_status()
+                break
+            except Exception as e:
+                last_err = e
+                if attempt < 2:
+                    time.sleep(1)
+                else:
+                    raise
+
         response.raise_for_status()
         content = response.text.strip()
 
@@ -1148,6 +1276,11 @@ def check_single_key(key: str, key_index: int) -> Tuple[bool, str, Optional[str]
     Возвращает: (успех, причина, ключ, тип, детали)
     """
     port = CFG.SOCKS_PORT_START + (key_index % 500)
+
+    # Hysteria2 проверяется через hy2/hysteria (Xray его не поддерживает)
+    if key.startswith("hysteria2://"):
+        return check_hysteria2_key(key, port, key_index)
+
     config = create_xray_config(key, port)
 
     if not config:
@@ -1229,32 +1362,59 @@ def check_keys(keys: List[str], max_workers: int) -> Tuple[List[str], List[str]]
 
     print(f"🔄 Проверка {total} ключей (потоков: {max_workers})...\n")
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+    executor = ThreadPoolExecutor(max_workers=max_workers)
+    try:
         futures = {
             executor.submit(check_single_key, key, idx): (key, idx)
             for idx, key in enumerate(keys)
         }
 
-        for future in as_completed(futures):
-            checked += 1
-            try:
-                success, reason, working_key, key_type, details = future.result(timeout=CFG.TOTAL_TIMEOUT)
+        try:
+            for future in as_completed(futures):
+                checked += 1
+                try:
+                    success, reason, working_key, key_type, details = future.result(timeout=CFG.TOTAL_TIMEOUT)
 
-                if success and working_key:
-                    if key_type == "white":
-                        white_keys.append(working_key)
-                        print(f"🏳️  [{checked}/{total}] {reason} - {details} (Белых: {len(white_keys)})")
-                    elif key_type == "universal":
-                        universal_keys.append(working_key)
-                        print(f"🌍 [{checked}/{total}] {reason} - {details} (Универс: {len(universal_keys)})")
-                else:
+                    if success and working_key:
+                        if key_type == "white":
+                            white_keys.append(working_key)
+                            print(f"🏳️  [{checked}/{total}] {reason} - {details} (Белых: {len(white_keys)})")
+                        elif key_type == "universal":
+                            universal_keys.append(working_key)
+                            print(f"🌍 [{checked}/{total}] {reason} - {details} (Универс: {len(universal_keys)})")
+                    else:
+                        failed += 1
+                        # Показываем каждую 10-ю ошибку с деталями
+                        if checked % 10 == 0:
+                            print(f"❌ [{checked}/{total}] {reason} - {details} (Всего не работает: {failed})")
+                except Exception as e:
                     failed += 1
-                    # Показываем каждую 10-ю ошибку с деталями
-                    if checked % 10 == 0:
-                        print(f"❌ [{checked}/{total}] {reason} - {details} (Всего не работает: {failed})")
-            except Exception as e:
-                failed += 1
-                print(f"⚠️  [{checked}/{total}] Timeout/Error: {str(e)[:30]}")
+                    print(f"⚠️  [{checked}/{total}] Timeout/Error: {str(e)[:30]}")
+        except KeyboardInterrupt:
+            print("\n\n⚠️  Ctrl+C: останавливаю проверку, сохраняю найденные ключи...")
+            # После первого Ctrl+C игнорируем последующие, чтобы не падать на shutdown/join
+            try:
+                signal.signal(signal.SIGINT, signal.SIG_IGN)
+            except Exception:
+                pass
+
+            # Пытаемся отменить те задачи, которые ещё не стартовали
+            for f in futures:
+                f.cancel()
+
+            # Быстро закрываем пул, не дожидаясь всех выполняющихся задач
+            try:
+                executor.shutdown(wait=False, cancel_futures=True)
+            except TypeError:
+                # Для старых реализаций без cancel_futures
+                executor.shutdown(wait=False)
+            return white_keys, universal_keys
+    finally:
+        # Нормальное завершение без Ctrl+C
+        try:
+            executor.shutdown(wait=True, cancel_futures=False)
+        except TypeError:
+            executor.shutdown(wait=True)
 
     print(f"\n{'='*70}")
     print(f"📊 РЕЗУЛЬТАТ:")
@@ -1265,6 +1425,114 @@ def check_keys(keys: List[str], max_workers: int) -> Tuple[List[str], List[str]]
     print(f"{'='*70}")
 
     return white_keys, universal_keys
+
+# ==================== ИМЕНОВАНИЕ: ШКАТУЛКА ЗАПРЕТОВ + СТРАНА ПО IP ====================
+# Коды стран -> русское название (для подписи в ключах)
+COUNTRY_NAMES_RU = {
+    "RU": "Россия", "NL": "Нидерланды", "DE": "Германия", "US": "США", "GB": "Великобритания",
+    "FR": "Франция", "PL": "Польша", "UA": "Украина", "KZ": "Казахстан", "TR": "Турция",
+    "FI": "Финляндия", "SE": "Швеция", "NO": "Норвегия", "LT": "Литва", "LV": "Латвия",
+    "EE": "Эстония", "RO": "Румыния", "BG": "Болгария", "HU": "Венгрия", "CZ": "Чехия",
+    "SK": "Словакия", "AT": "Австрия", "CH": "Швейцария", "IT": "Италия", "ES": "Испания",
+    "PT": "Португалия", "GR": "Греция", "IN": "Индия", "SG": "Сингапур", "JP": "Япония",
+    "KR": "Южная Корея", "HK": "Гонконг", "TW": "Тайвань", "CA": "Канада", "BR": "Бразилия",
+    "AU": "Австралия", "IL": "Израиль", "IR": "Иран", "AE": "ОАЭ", "TH": "Таиланд",
+    "VN": "Вьетнам", "ID": "Индонезия", "MY": "Малайзия", "PH": "Филиппины", "AR": "Аргентина",
+    "CL": "Чили", "CO": "Колумбия", "MX": "Мексика", "ZA": "ЮАР", "EG": "Египет",
+    "GE": "Грузия", "AM": "Армения", "AZ": "Азербайджан", "BY": "Беларусь", "MD": "Молдова",
+}
+
+def get_host_from_key(key: str) -> Optional[str]:
+    """Извлекает хост (домен или IP) из ключа подписи."""
+    try:
+        key = key.strip()
+        if key.startswith("vless://"):
+            rest = key.replace("vless://", "").split("@", 1)[-1]
+            host_part = rest.split("?")[0].split("#")[0]
+            if ":" in host_part:
+                return host_part.rsplit(":", 1)[0].strip()
+            return host_part.strip()
+        if key.startswith("vmess://"):
+            import base64
+            b = key.replace("vmess://", "")
+            pad = 4 - len(b) % 4
+            if pad != 4:
+                b += "=" * pad
+            data = json.loads(base64.b64decode(b).decode("utf-8"))
+            return (data.get("add") or "").strip()
+        if key.startswith("trojan://"):
+            rest = key.replace("trojan://", "").split("@", 1)[-1]
+            host_part = rest.split("?")[0].split("#")[0]
+            if ":" in host_part:
+                return host_part.rsplit(":", 1)[0].strip()
+            return host_part.strip()
+        if key.startswith("ss://"):
+            import base64
+            raw = key.replace("ss://", "").split("#")[0]
+            if "@" in raw:
+                _, server_port = raw.split("@", 1)
+            else:
+                pad = 4 - len(raw) % 4
+                if pad != 4:
+                    raw += "=" * pad
+                decoded = base64.b64decode(raw).decode("utf-8")
+                _, server_port = decoded.split("@", 1)
+            return server_port.rsplit(":", 1)[0].strip()
+        if key.startswith("hysteria2://"):
+            rest = key.replace("hysteria2://", "").split("@", 1)[-1]
+            host_part = rest.split("?")[0].split("#")[0]
+            if ":" in host_part:
+                return host_part.rsplit(":", 1)[0].strip()
+            return host_part.strip()
+    except Exception:
+        pass
+    return None
+
+
+_country_cache: dict = {}
+
+def get_country_by_host(host: str) -> str:
+    """Определяет страну по хосту (домен резолвится в IP, затем ipinfo.io). Результат кэшируется."""
+    if not host or host.startswith("127.") or host.startswith("10.") or "localhost" in host.lower():
+        return ""
+    if host in _country_cache:
+        return _country_cache[host]
+    try:
+        ip = host
+        if not re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", host):
+            try:
+                ip = socket.gethostbyname(host)
+            except (socket.gaierror, OSError):
+                _country_cache[host] = ""
+                return ""
+        resp = requests.get(f"https://ipinfo.io/{ip}/json", timeout=5)
+        if resp.status_code != 200:
+            _country_cache[host] = ""
+            return ""
+        data = resp.json()
+        code = (data.get("country") or "").strip().upper()
+        if not code:
+            _country_cache[host] = ""
+            return ""
+        name = COUNTRY_NAMES_RU.get(code, code)
+        _country_cache[host] = name
+        return name
+    except Exception:
+        _country_cache[host] = ""
+        return ""
+
+
+def rename_key_to_shkatulka(key: str) -> str:
+    """Заменяет название в ключе на «Шкатулка запретов» и добавляет страну по IP."""
+    base = key.split("#", 1)[0].rstrip("#")
+    host = get_host_from_key(key)
+    country = get_country_by_host(host) if host else ""
+    if country:
+        label = f"Шкатулка запретов — {country}"
+    else:
+        label = "Шкатулка запретов"
+    return f"{base}#{label}"
+
 
 # ==================== SAVING ====================
 def save_keys(white_keys: List[str], universal_keys: List[str]):
@@ -1277,19 +1545,23 @@ def save_keys(white_keys: List[str], universal_keys: List[str]):
     os.makedirs(CFG.RU_DIR, exist_ok=True)
     os.makedirs(CFG.EURO_DIR, exist_ok=True)
 
+    # Переименовываем ключи: «Шкатулка запретов — {страна по IP}»
+    white_renamed = [rename_key_to_shkatulka(k) for k in white_keys]
+    universal_renamed = [rename_key_to_shkatulka(k) for k in universal_keys]
+
     # 1. RU_Best/ru_white.txt
     if white_keys:
         ru_white_file = os.path.join(CFG.RU_DIR, "ru_white.txt")
         with open(ru_white_file, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(white_keys))
+            f.write('\n'.join(white_renamed))
         print(f"\n🏳️  {ru_white_file}")
-        print(f"   Белый список: {len(white_keys)} ключей")
+        print(f"   Белый список: {len(white_keys)} ключей (названия: Шкатулка запретов — страна)")
 
     # 2. My_Euro/euro_universal.txt и euro_black.txt
     if universal_keys:
         euro_universal_file = os.path.join(CFG.EURO_DIR, "euro_universal.txt")
         with open(euro_universal_file, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(universal_keys))
+            f.write('\n'.join(universal_renamed))
         print(f"\n🌍 {euro_universal_file}")
         print(f"   Универсальные: {len(universal_keys)} ключей")
 
@@ -1344,6 +1616,9 @@ def main():
         print("\n❌ curl не установлен")
         return
 
+    white_keys: List[str] = []
+    universal_keys: List[str] = []
+
     try:
         keys = load_all_keys(CFG.SOURCES, CFG.MAX_KEYS)
 
@@ -1362,6 +1637,13 @@ def main():
 
     except KeyboardInterrupt:
         print("\n\n⚠️  Прервано")
+        # Игнорируем повторный Ctrl+C, чтобы не увидеть трейс при завершении потоков
+        try:
+            signal.signal(signal.SIGINT, signal.SIG_IGN)
+        except Exception:
+            pass
+        if white_keys or universal_keys:
+            save_keys(white_keys, universal_keys)
     except Exception as e:
         print(f"\n\n❌ Ошибка: {e}")
         import traceback
