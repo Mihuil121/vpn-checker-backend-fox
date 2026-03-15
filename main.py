@@ -11,11 +11,13 @@ VPN Checker v3.1 - Улучшенная проверка соединений
 """
 
 import os
+import sys
 import json
 import time
 import subprocess
 import tempfile
 import shutil
+import argparse
 import requests
 import socket
 import re
@@ -50,8 +52,8 @@ class Config:
     RETRY_ATTEMPTS: int = 1         # Было 2, стало 1
     RETRY_DELAY: int = 1            # Было 2, стало 1
 
-    # ⚡ ОПТИМИЗАЦИЯ: Больше потоков
-    MAX_WORKERS: int = 50           # Было 10, стало 50!
+    # Потоки (меньше = стабильнее Xray, меньше "Xray упал")
+    MAX_WORKERS: int = 15
     MAX_KEYS: int = 999999
 
     # URL для проверки
@@ -79,49 +81,6 @@ class Config:
                 "https://raw.githubusercontent.com/zieng2/wl/main/vless.txt",
                 "https://raw.githubusercontent.com/LowiKLive/BypassWhitelistRu/refs/heads/main/WhiteList-Bypass_Ru.txt",
                 "https://raw.githubusercontent.com/zieng2/wl/main/vless_universal.txt",
-                "https://raw.githubusercontent.com/vsevjik/OBSpiskov/refs/heads/main/wwh",
-                "https://etoneya.a9fm.site/1",
-                "https://raw.githubusercontent.com/Kirillo4ka/vpn-configs-for-russia/refs/heads/main/Vless-Rus-Mobile-White-List.txt",
-                "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Mobile.txt",
-                "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Cable.txt",
-                "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_SS%2BAll_RUS.txt",
-                "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS.txt",
-                "https://raw.githubusercontent.com/Mosifree/-FREE2CONFIG/refs/heads/main/Reality",
-                "https://raw.githubusercontent.com/STR97/STRUGOV/refs/heads/main/STR.BYPASS",
-                "https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/refs/heads/main/githubmirror/26.txt",
-                "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/refs/heads/main/githubmirror/new/all_new.txt",
-                "https://raw.githubusercontent.com/crackbest/V2ray-Config/refs/heads/main/config.txt",
-                "https://raw.githubusercontent.com/miladtahanian/multi-proxy-config-fetcher/refs/heads/main/configs/proxy_configs.txt",
-                "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/refs/heads/main/Countries/Latvia.txt",
-                "https://raw.githubusercontent.com/STR97/STRUGOV/refs/heads/main/BYPASS",
-                "https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/refs/heads/main/githubmirror/22.txt",
-                "https://etoneya.a9fm.site/whitelist",
-                "https://alley.serv00.net/whitelist",
-                "https://etoneya.a9fm.site/youtube",
-                "https://translate.yandex.ru/translate?url=https://etoneya.a9fm.site/youtube&lang=en-ru",
-                "https://etoneya.a9fm.site/other",
-                "https://raw.githubusercontent.com/EtoNeYaProject/etoneyaproject.github.io/refs/heads/main/other",
-                "https://vlesstrojan.alexanderyurievich88.workers.dev?token=sub",
-                "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/Vless-Reality-White-Lists-Rus-Mobile.txt",
-                "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/Vless-Reality-White-Lists-Rus-Mobile-2.txt",
-                "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS_mobile.txt",
-                "https://github.com/kismetpro/NodeSuber/raw/refs/heads/main/Splitted-By-Protocol/trojan.txt",
-                "https://github.com/kismetpro/NodeSuber/raw/refs/heads/main/Splitted-By-Protocol/hy2.txt",
-                "https://raw.githubusercontent.com/F0rc3Run/F0rc3Run/refs/heads/main/Best-Results/proxies.txt",
-                "https://raw.githubusercontent.com/F0rc3Run/F0rc3Run/refs/heads/main/splitted-by-protocol/trojan.txt",
-                "https://tseya.a9fm.site/whitelist",
-                "https://translate.yandex.ru/translate?url=https://etoneya.a9fm.site/whitelist&lang=en-ru",
-                "https://raw.githubusercontent.com/EtoNeYaProject/etoneyaproject.github.io/refs/heads/main/whitelist",
-                "https://raw.githubusercontent.com/kemfie/whitelistrussua/main/RussiaCIDR.txt",
-                "https://bp.wl.free.nf/confs/wl.txt"
-                "https://raw.githubusercontent.com/CidVpn/cid-vpn-config/refs/heads/main/general.txt",
-                "https://storage.yandexcloud.net/cid-vpn/whitelist.txt",
-                "https://raw.githubusercontent.com/MahsaNetConfigTopic/config/refs/heads/main/xray_final.txt",
-                "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/refs/heads/main/Subscriptions/Sub1.txt",
-                "https://raw.githubusercontent.com/RKPchannel/RKP_bypass_configs/refs/heads/main/configs/url_work.txt",
-                "https://gbr.mydan.online/configs",
-                "https://raw.githubusercontent.com/Maskkost93/kizyak-vpn-4.0/refs/heads/main/kizyaktestru.txt",
-                "https://shz.al/YzPN:/~sorensub,subSHABTJK",
                 "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/refs/heads/main/all_configs.txt",
                 "https://raw.githubusercontent.com/restlycames/RestlyConnect_sub/refs/heads/main/free_vless_servers.txt",
                 "https://raw.githubusercontent.com/SilentGhostCodes/WhiteListVpn/refs/heads/main/BlackList.txt",
@@ -171,7 +130,91 @@ class Config:
                 "http://allvpn.x10.mx/sub.php",
                 "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Mobile-2.txt",
                 "https://raw.githubusercontent.com/VP01596/vless-top15/refs/heads/main/top100.txt",
-            ]
+                "https://raw.githubusercontent.com/VPN-cat/VPN/refs/heads/main/configs/VPN-cat",
+                "https://raw.githubusercontent.com/VPN-cat/VPN/refs/heads/main/configs/VPN-cat-top-25",
+                "https://raw.githubusercontent.com/VPN-cat/VPN/refs/heads/main/configs/VPN-cat-top-100",
+                "https://raw.githubusercontent.com/zieng2/wl/main/vless_lite.txt#%D0%90%D0%B2%D1%82%D0%BE%D0%BE%D0%B1%D0%BD%D0%BE%D0%B2%D0%BB%D1%8F%D0%B5%D0%BC%D1%8B%D0%B9",
+                "https://raw.githubusercontent.com/SilentGhostCodes/WhiteListVpn/refs/heads/main/BlackList.txt",
+                "https://raw.githubusercontent.com/Farid-Karimi/Config-Collector/main/trojan_iran.txt",
+                "https://raw.githubusercontent.com/Epodonios/v2ray-configs/refs/heads/main/Sub44.txt",
+                "https://raw.githubusercontent.com/Epodonios/v2ray-configs/refs/heads/main/Sub45.txt",
+                "https://raw.githubusercontent.com/Epodonios/v2ray-configs/refs/heads/main/Sub46.txt",
+                "https://raw.githubusercontent.com/Epodonios/v2ray-configs/refs/heads/main/Sub47.txt",
+                "https://raw.githubusercontent.com/Epodonios/v2ray-configs/refs/heads/main/Sub48.txt",
+                "https://raw.githubusercontent.com/Epodonios/v2ray-configs/refs/heads/main/Sub49.txt",
+                "https://raw.githubusercontent.com/Epodonios/v2ray-configs/refs/heads/main/Sub50.txt",
+                "https://raw.githubusercontent.com/Epodonios/v2ray-configs/refs/heads/main/Sub51.txt",
+                "https://raw.githubusercontent.com/Epodonios/v2ray-configs/refs/heads/main/Sub52.txt",
+                "https://raw.githubusercontent.com/Epodonios/v2ray-configs/refs/heads/main/Sub53.txt",
+                "https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/refs/heads/main/githubmirror/3.txt"
+                "https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/refs/heads/main/githubmirror/4.txt",
+                "https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/refs/heads/main/githubmirror/5.txt",
+                "https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/refs/heads/main/githubmirror/6.txt",
+                "https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/refs/heads/main/githubmirror/7.txt",
+                "https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/refs/heads/main/githubmirror/8.txt",
+                "https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/refs/heads/main/githubmirror/9.txt",
+                "https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/refs/heads/main/githubmirror/10.txt",
+                "https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/refs/heads/main/githubmirror/11.txt",
+                "https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/refs/heads/main/githubmirror/12.txt",
+                "https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/refs/heads/main/githubmirror/13.txt",
+                "https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/refs/heads/main/githubmirror/14.txt",
+                "https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/refs/heads/main/githubmirror/15.txt",
+                "https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/refs/heads/main/githubmirror/16.txt",
+                "https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/refs/heads/main/githubmirror/17.txt",
+                "https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/refs/heads/main/githubmirror/18.txt",
+                "https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/refs/heads/main/githubmirror/19.txt",
+                "https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/refs/heads/main/githubmirror/20.txt",
+                "https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/refs/heads/main/githubmirror/21.txt",
+                "https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/refs/heads/main/githubmirror/22.txt",
+                "https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/refs/heads/main/githubmirror/23.txt",
+                "https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/refs/heads/main/githubmirror/24.txt",
+                "https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/refs/heads/main/githubmirror/25.txt",
+                "https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/refs/heads/main/githubmirror/26.txt",
+                "https://raw.githubusercontent.com/parvinxs/Submahsanetxsparvin/refs/heads/main/Sub.mahsa.xsparvin",
+                "https://cdn.jsdelivr.net/gh/xiaoji235/airport-free/v2ray.txt",
+                "https://raw.githubusercontent.com/vsevjik/OBSpiskov/refs/heads/main/wwh",
+                "https://raw.githubusercontent.com/Kirillo4ka/vpn-configs-for-russia/refs/heads/main/Vless-Rus-Mobile-White-List.txt",
+                "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Mobile.txt",
+                "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Cable.txt",
+                "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_SS%2BAll_RUS.txt",
+                "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS.txt",
+                "https://raw.githubusercontent.com/Mosifree/-FREE2CONFIG/refs/heads/main/Reality",
+                "https://raw.githubusercontent.com/STR97/STRUGOV/refs/heads/main/STR.BYPASS",
+                "https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/refs/heads/main/githubmirror/26.txt",
+                "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/refs/heads/main/githubmirror/new/all_new.txt",
+                "https://raw.githubusercontent.com/crackbest/V2ray-Config/refs/heads/main/config.txt",
+                "https://raw.githubusercontent.com/miladtahanian/multi-proxy-config-fetcher/refs/heads/main/configs/proxy_configs.txt",
+                "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/refs/heads/main/Countries/Latvia.txt",
+                "https://raw.githubusercontent.com/STR97/STRUGOV/refs/heads/main/BYPASS",
+                "https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/refs/heads/main/githubmirror/22.txt",
+                "https://alley.serv00.net/whitelist",
+                "https://etoneya.a9fm.site/youtube",
+                "https://translate.yandex.ru/translate?url=https://etoneya.a9fm.site/youtube&lang=en-ru",
+                "https://etoneya.a9fm.site/other",
+                "https://raw.githubusercontent.com/EtoNeYaProject/etoneyaproject.github.io/refs/heads/main/other",
+                "https://vlesstrojan.alexanderyurievich88.workers.dev?token=sub",
+                "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/Vless-Reality-White-Lists-Rus-Mobile.txt",
+                "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/Vless-Reality-White-Lists-Rus-Mobile-2.txt",
+                "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/BLACK_VLESS_RUS_mobile.txt",
+                "https://github.com/kismetpro/NodeSuber/raw/refs/heads/main/Splitted-By-Protocol/trojan.txt",
+                "https://github.com/kismetpro/NodeSuber/raw/refs/heads/main/Splitted-By-Protocol/hy2.txt",
+                "https://raw.githubusercontent.com/F0rc3Run/F0rc3Run/refs/heads/main/Best-Results/proxies.txt",
+                "https://raw.githubusercontent.com/F0rc3Run/F0rc3Run/refs/heads/main/splitted-by-protocol/trojan.txt",
+                "https://tseya.a9fm.site/whitelist",
+                "https://translate.yandex.ru/translate?url=https://etoneya.a9fm.site/whitelist&lang=en-ru",
+                "https://raw.githubusercontent.com/EtoNeYaProject/etoneyaproject.github.io/refs/heads/main/whitelist",
+                "https://raw.githubusercontent.com/kemfie/whitelistrussua/main/RussiaCIDR.txt",
+                "https://bp.wl.free.nf/confs/wl.txt"
+                "https://raw.githubusercontent.com/CidVpn/cid-vpn-config/refs/heads/main/general.txt",
+                "https://storage.yandexcloud.net/cid-vpn/whitelist.txt",
+                "https://raw.githubusercontent.com/MahsaNetConfigTopic/config/refs/heads/main/xray_final.txt",
+                "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/refs/heads/main/Subscriptions/Sub1.txt",
+                "https://raw.githubusercontent.com/RKPchannel/RKP_bypass_configs/refs/heads/main/configs/url_work.txt",
+                "https://gbr.mydan.online/configs",
+                "https://raw.githubusercontent.com/Maskkost93/kizyak-vpn-4.0/refs/heads/main/kizyaktestru.txt",
+                "https://shz.al/YzPN:/~sorensub,subSHABTJK",
+
+]
 
 CFG = Config()
 
@@ -569,7 +612,8 @@ def check_hysteria2_key(key: str, port: int, key_index: int) -> Tuple[bool, str,
     """
     hy2_bin = get_hy2_binary()
     if not hy2_bin:
-        return False, "Hysteria2: не установлен hy2/hysteria", None, "none", "Установите hy2 для проверки"
+        # Без hy2 не проверяем, но ключ сохраняем в универсальные (не считаем провалом)
+        return True, "Hysteria2 (без проверки)", key, "universal", "hy2 не установлен — ключ сохранён"
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
         f.write(create_hysteria2_yaml_config(key, port))
@@ -900,10 +944,6 @@ def check_malicious_parameters(key: str) -> Tuple[bool, str]:
         for param in malicious_params:
             if param in key_lower:
                 return True, f"Вредоносный параметр: {param}"
-
-        # Проверка на подозрительно длинные ключи
-        if len(key) > 1000:
-            return True, "Слишком длинный ключ"
 
         # Проверка на нестандартные порты
         if ":@" in key:
@@ -1588,23 +1628,70 @@ def save_keys(white_keys: List[str], universal_keys: List[str]):
     print(f"\n📋 {subscriptions_file}")
     print(f"   Файл подписок создан")
 
+# ==================== CLI ====================
+def parse_args():
+    """Аргументы: выбор конкретных ссылок, лимит ключей, число потоков."""
+    p = argparse.ArgumentParser(
+        description="VPN Checker — проверка ключей (vless, vmess, trojan, ss, hysteria2)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Примеры:
+  Все источники из конфига (по умолчанию):
+    python main.py
+
+  Только выбранные ссылки:
+    python main.py --sources https://etoneya.a9fm.site/youtube https://etoneya.a9fm.site/whitelist
+
+  Ограничить число ключей и потоков (меньше падений Xray):
+    python main.py --max-keys 5000 --workers 10
+
+  Одна ссылка, 2000 ключей, 8 потоков:
+    python main.py --sources https://etoneya.a9fm.site/1 --max-keys 2000 --workers 8
+"""
+    )
+    p.add_argument(
+        "--sources",
+        nargs="*",
+        default=None,
+        metavar="URL",
+        help="Загружать ключи только с этих URL. Без аргумента — все из конфига.",
+    )
+    p.add_argument(
+        "--max-keys",
+        type=int,
+        default=None,
+        metavar="N",
+        help=f"Максимум ключей для проверки (по умолчанию: {CFG.MAX_KEYS})",
+    )
+    p.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        metavar="N",
+        help=f"Число потоков (по умолчанию: {CFG.MAX_WORKERS}). Меньше — стабильнее, меньше «Xray упал».",
+    )
+    return p.parse_args()
+
+
 # ==================== MAIN ====================
 def main():
+    args = parse_args()
+
+    sources = args.sources if args.sources else CFG.SOURCES
+    max_keys = args.max_keys if args.max_keys is not None else CFG.MAX_KEYS
+    workers = args.workers if args.workers is not None else CFG.MAX_WORKERS
+
     print("\n" + "="*70)
     print(" VPN Checker v3.1 - УЛУЧШЕННАЯ ПРОВЕРКА СОЕДИНЕНИЙ")
     print("="*70)
-    print("\n📌 Что нового:")
-    print("   ✅ Проверка открытия SOCKS5 портов")
-    print("   ✅ Retry логика (2 попытки с задержкой)")
-    print("   ✅ Увеличенные таймауты (5s startup, 15s request)")
-    print("   ✅ Измерение времени ответа")
-    print("   ✅ Детальное логирование ошибок")
-    print("   ✅ Комплексная проверка безопасности конфигов")
-    print("   ✅ Проверка подозрительных доменов и IP")
-    print("   ✅ Анализ SSL/TLS сертификатов")
-    print("   ✅ Обнаружение DNS утечек")
-    print("   ✅ Проверка безопасности протоколов")
-    print("   ✅ Проверка доступности конкретных сервисов (YouTube, Discord, Telegram, Cloudflare)\n")
+    if args.sources:
+        print(f"\n📎 Выбрано источников: {len(sources)}")
+        for u in sources[:10]:
+            print(f"   • {u[:70]}{'...' if len(u) > 70 else ''}")
+        if len(sources) > 10:
+            print(f"   ... и ещё {len(sources) - 10}")
+    print(f"\n⚙️  Лимит ключей: {max_keys} | Потоков: {workers}")
+    print("   (меньше потоков — реже «Xray упал»)\n")
 
     if not os.path.exists(CFG.XRAY_PATH):
         print(f"\n❌ Xray не найден: {CFG.XRAY_PATH}")
@@ -1620,13 +1707,13 @@ def main():
     universal_keys: List[str] = []
 
     try:
-        keys = load_all_keys(CFG.SOURCES, CFG.MAX_KEYS)
+        keys = load_all_keys(sources, max_keys)
 
         if not keys:
             print("\n❌ Не удалось загрузить ключи")
             return
 
-        white_keys, universal_keys = check_keys(keys, CFG.MAX_WORKERS)
+        white_keys, universal_keys = check_keys(keys, workers)
 
         if white_keys or universal_keys:
             save_keys(white_keys, universal_keys)
