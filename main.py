@@ -31,8 +31,101 @@ import threading
 import argparse
 from urllib.parse import urlparse, parse_qs, unquote
 import base64
+import ipaddress
 
 # ==================== КОНФИГУРАЦИЯ ====================
+# Эмодзи флагов стран
+COUNTRY_FLAGS = {
+    "RU": "🇷🇺", "DE": "🇩🇪", "NL": "🇳🇱", "US": "🇺🇸", "GB": "🇬🇧",
+    "FR": "🇫🇷", "PL": "🇵🇱", "UA": "🇺🇦", "KZ": "🇰🇿", "TR": "🇹🇷",
+    "FI": "🇫🇮", "SE": "🇸🇪", "LT": "🇱🇹", "LV": "🇱🇻", "EE": "🇪🇪",
+    "RO": "🇷🇴", "HU": "🇭🇺", "CZ": "🇨🇿", "AT": "🇦🇹", "CH": "🇨🇭",
+    "IT": "🇮🇹", "ES": "🇪🇸", "SG": "🇸🇬", "JP": "🇯🇵", "HK": "🇭🇰",
+    "CA": "🇨🇦", "AU": "🇦🇺", "AE": "🇦🇪", "GE": "🇬🇪", "AM": "🇦🇲",
+    "BY": "🇧🇾", "MD": "🇲🇩", "IR": "🇮🇷", "IN": "🇮🇳", "CN": "🇨🇳",
+    "KR": "🇰🇷", "BR": "🇧🇷", "ID": "🇮🇩", "VN": "🇻🇳", "TH": "🇹🇭",
+    "MY": "🇲🇾", "PH": "🇵🇭", "UA": "🇺🇦", "BG": "🇧🇬", "GR": "🇬🇷",
+    "PT": "🇵🇹", "IE": "🇮🇪", "NO": "🇳🇴", "DK": "🇩🇰", "BE": "🇧🇪",
+    "LU": "🇱🇺", "SK": "🇸🇰", "SI": "🇸🇮", "HR": "🇭🇷", "RS": "🇷🇸",
+    "AL": "🇦🇱", "MK": "🇲🇰", "MT": "🇲🇹", "CY": "🇨🇾", "IS": "🇮🇸",
+    "AZ": "🇦🇿", "UZ": "🇺🇿", "TM": "🇹🇲", "KG": "🇰🇬", "TJ": "🇹🇯",
+    "MX": "🇲🇽", "AR": "🇦🇷", "CL": "🇨🇱", "CO": "🇨🇴", "PE": "🇵🇪",
+    "ZA": "🇿🇦", "EG": "🇪🇬", "NG": "🇳🇬", "KE": "🇰🇪", "IL": "🇮🇱",
+    "SA": "🇸🇦", "QA": "🇶🇦", "KW": "🇰🇼", "BH": "🇧🇭", "OM": "🇴🇲",
+    "PK": "🇵🇰", "BD": "🇧🇩", "LK": "🇱🇰", "NP": "🇳🇵", "MM": "🇲🇲",
+    "KH": "🇰🇭", "LA": "🇱🇦", "MN": "🇲🇳", "TW": "🇹🇼", "NZ": "🇳🇿",
+}
+
+# TLD для определения страны
+TLD_COUNTRY_MAP = {
+    ".ru": "RU", ".рф": "RU", ".de": "DE", ".nl": "NL", ".fr": "FR",
+    ".uk": "GB", ".com": "US", ".org": "US", ".net": "US", ".edu": "US",
+    ".pl": "PL", ".ua": "UA", ".kz": "KZ", ".tr": "TR", ".fi": "FI",
+    ".se": "SE", ".lt": "LT", ".lv": "LV", ".ee": "EE", ".ro": "RO",
+    ".hu": "HU", ".cz": "CZ", ".at": "AT", ".ch": "CH", ".it": "IT",
+    ".es": "ES", ".sg": "SG", ".jp": "JP", ".hk": "HK", ".ca": "CA",
+    ".au": "AU", ".ae": "AE", ".ge": "GE", ".am": "AM", ".by": "BY",
+    ".md": "MD", ".ir": "IR", ".in": "IN", ".cn": "CN", ".kr": "KR",
+    ".br": "BR", ".id": "ID", ".vn": "VN", ".th": "TH", ".my": "MY",
+    ".ph": "PH", ".bg": "BG", ".gr": "GR", ".pt": "PT", ".ie": "IE",
+    ".no": "NO", ".dk": "DK", ".be": "BE", ".lu": "LU", ".sk": "SK",
+    ".si": "SI", ".hr": "HR", ".rs": "RS", ".al": "AL", ".mk": "MK",
+    ".mt": "MT", ".cy": "CY", ".is": "IS", ".az": "AZ", ".uz": "UZ",
+    ".tm": "TM", ".kg": "KG", ".tj": "TJ", ".mx": "MX", ".ar": "AR",
+    ".cl": "CL", ".co": "CO", ".pe": "PE", ".za": "ZA", ".eg": "EG",
+    ".ng": "NG", ".ke": "KE", ".il": "IL", ".sa": "SA", ".qa": "QA",
+    ".kw": "KW", ".bh": "BH", ".om": "OM", ".pk": "PK", ".bd": "BD",
+    ".lk": "LK", ".np": "NP", ".mm": "MM", ".kh": "KH", ".la": "LA",
+    ".mn": "MN", ".tw": "TW", ".nz": "NZ",
+}
+
+# IP диапазоны для некоторых стран (первые октеты)
+IP_COUNTRY_RANGES = {
+    "RU": ["5.", "31.", "37.", "46.", "62.", "77.", "78.", "79.", "80.", "81.", "82.", "83.",
+           "84.", "85.", "87.", "88.", "89.", "90.", "91.", "92.", "93.", "94.", "95.", "109.",
+           "141.", "178.", "185.", "188.", "194.", "195.", "212.", "213.", "217."],
+    "US": ["8.", "13.", "17.", "23.", "24.", "32.", "34.", "35.", "40.", "44.", "45.", "50.",
+           "52.", "54.", "63.", "64.", "65.", "66.", "67.", "68.", "69.", "70.", "71.", "72.",
+           "73.", "74.", "75.", "76.", "96.", "97.", "98.", "99.", "100.", "104.", "107.",
+           "108.", "128.", "129.", "130.", "131.", "132.", "134.", "135.", "136.", "137.",
+           "138.", "139.", "140.", "142.", "143.", "144.", "146.", "147.", "148.", "149.",
+           "150.", "151.", "152.", "155.", "156.", "157.", "158.", "159.", "160.", "161.",
+           "162.", "163.", "164.", "165.", "166.", "167.", "168.", "169.", "170.", "172.",
+           "173.", "174.", "184.", "185.", "192.", "198.", "199.", "204.", "205.", "206.",
+           "207.", "208.", "209.", "216."],
+    "DE": ["46.", "51.", "52.", "53.", "77.", "78.", "79.", "80.", "81.", "82.", "83.", "84.",
+           "85.", "87.", "88.", "89.", "91.", "93.", "94.", "95.", "109.", "134.", "135.",
+           "136.", "137.", "138.", "139.", "141.", "144.", "145.", "151.", "159.", "176.",
+           "177.", "178.", "185.", "188.", "193.", "194.", "195.", "212.", "213.", "217."],
+    "NL": ["5.", "31.", "37.", "45.", "46.", "62.", "77.", "78.", "79.", "80.", "81.", "82.",
+           "83.", "84.", "85.", "87.", "88.", "89.", "91.", "93.", "94.", "95.", "109.",
+           "130.", "131.", "145.", "176.", "177.", "178.", "185.", "188.", "193.", "194.",
+           "195.", "212.", "213."],
+    "GB": ["2.", "5.", "31.", "37.", "45.", "46.", "51.", "52.", "62.", "77.", "78.", "79.",
+           "80.", "81.", "82.", "83.", "84.", "85.", "87.", "88.", "89.", "91.", "93.",
+           "94.", "95.", "109.", "130.", "141.", "158.", "176.", "177.", "178.", "185.",
+           "188.", "193.", "194.", "195.", "212.", "213."],
+    "FR": ["5.", "31.", "37.", "45.", "46.", "51.", "52.", "62.", "77.", "78.", "79.", "80.",
+           "81.", "82.", "83.", "84.", "85.", "87.", "88.", "89.", "91.", "93.", "94.",
+           "95.", "109.", "141.", "151.", "159.", "176.", "177.", "178.", "185.", "188.",
+           "193.", "194.", "195.", "212.", "213."],
+    "CN": ["14.", "27.", "36.", "39.", "42.", "49.", "58.", "59.", "60.", "61.", "101.",
+           "103.", "106.", "110.", "111.", "112.", "113.", "114.", "115.", "116.", "117.",
+           "118.", "119.", "120.", "121.", "122.", "123.", "124.", "125.", "126.", "128.",
+           "129.", "130.", "131.", "132.", "133.", "134.", "135.", "136.", "137.", "138.",
+           "139.", "140.", "141.", "142.", "143.", "144.", "145.", "146.", "147.", "148.",
+           "149.", "150.", "151.", "152.", "153.", "154.", "155.", "156.", "157.", "158.",
+           "159.", "160.", "161.", "162.", "163.", "164.", "165.", "166.", "167.", "168.",
+           "169.", "170.", "171.", "172.", "173.", "174.", "175.", "176.", "177.", "178.",
+           "179.", "180.", "181.", "182.", "183.", "184.", "185.", "186.", "187.", "188.",
+           "189.", "190.", "191.", "192.", "193.", "194.", "195.", "196.", "197.", "198.",
+           "199.", "200.", "201.", "202.", "203.", "210.", "211.", "218.", "219.", "220.",
+           "221.", "222.", "223."],
+}
+
+# Реальный IP машины (определяется при старте)
+REAL_IP = None
+
 @dataclass
 class Config:
     XRAY_PATH: str = "/home/misha/vpn-checker-backend-fox/Xray-linux-64/xray"
@@ -78,6 +171,13 @@ class Config:
         if self.SOURCES is None:
             self.SOURCES = [
                  "https://raw.githubusercontent.com/zieng2/wl/main/vless.txt",
+                 "https://raw.githubusercontent.com/EtoNeYaProject/etoneyaproject.github.io/refs/heads/main/1",
+                 "https://gitverse.ru/api/repos/bywarm/rser/raw/branch/master/selected.txt",
+                 "https://rostunnel.vercel.app/mega.txt",
+                 "https://raw.githubusercontent.com/tankist939-afk/Obhod-WL/refs/heads/main/Obhod%20WL",
+                 "https://raw.githubusercontent.com/LimeHi/LimeVPNGenerator/main/Keys.txt",
+                 "https://gist.githubusercontent.com/sevushyamamoto-stack/9341be7a058e132154d407d082a60fb1/raw/mysub.txt",
+                 "https://raw.githubusercontent.com/ByeWhiteLists/ByeWhiteLists2/refs/heads/main/ByeWhiteLists2.txt",
                  "https://raw.githubusercontent.com/Rayan-Config/C-Sub/refs/heads/main/configs/proxy.txt",
                  "https://raw.githubusercontent.com/prominbro/KfWL/refs/heads/main/KfWL.txt",
                  "https://raw.githubusercontent.com/prominbro/KfWL/refs/heads/main/KfWLcheck.txt",
@@ -130,6 +230,7 @@ class Config:
                  "https://raw.githubusercontent.com/sevcator/5ubscrpt10n/main/mini/m1n1-5ub-35.txt",
                  "https://raw.githubusercontent.com/sevcator/5ubscrpt10n/main/mini/m1n1-5ub-36.txt",
                  "https://subrostunnel.vercel.app/gen.txt",
+                 "https://wlrus.lol/confs/blackl.txt",
                  "https://raw.githubusercontent.com/ALIILAPRO/v2rayNG-Config/main/server.txt",
                  "https://raw.githubusercontent.com/AB-84-AB/Free-Shadowsocks/refs/heads/main/Telegram-id-AB_841",
                  "https://raw.githubusercontent.com/47AgEnT-47/vpn-configs/refs/heads/main/configs.txt",
@@ -502,6 +603,86 @@ def curl_check(port: int, url: str) -> Tuple[bool, float]:
     except:
         return False, float(CFG.REQUEST_TIMEOUT)
 
+def get_ip_through_proxy(port: int) -> Optional[str]:
+    """
+    Получает внешний IP через SOCKS5 прокси.
+    Возвращает IP адрес или None если не удалось.
+    """
+    try:
+        r = subprocess.run(
+            ["curl", "-x", f"socks5h://127.0.0.1:{port}",
+             "-m", "10",
+             "--connect-timeout", "5",
+             "-s",
+             "https://api.ipify.org"],
+            capture_output=True, timeout=12,
+        )
+        ip = r.stdout.decode().strip()
+        # Проверяем что это похожее на IP
+        if re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$', ip):
+            return ip
+    except:
+        pass
+    return None
+
+def get_real_ip() -> Optional[str]:
+    """
+    Получает реальный IP машины (без прокси).
+    """
+    try:
+        r = subprocess.run(
+            ["curl", "-m", "10", "--connect-timeout", "5", "-s",
+             "https://api.ipify.org"],
+            capture_output=True, timeout=12,
+        )
+        ip = r.stdout.decode().strip()
+        if re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$', ip):
+            return ip
+    except:
+        pass
+    return None
+
+def check_proxy_ip_differs(port: int, real_ip: Optional[str]) -> bool:
+    """
+    Проверяет что IP через прокси отличается от реального.
+    Это гарантирует что трафик реально идёт через VPN.
+    """
+    proxy_ip = get_ip_through_proxy(port)
+    if not proxy_ip:
+        return False
+    
+    # Если не знаем реальный IP, просто проверяем что получили какой-то IP
+    if not real_ip:
+        return True
+    
+    # IP должны отличаться
+    return proxy_ip != real_ip
+
+def curl_check_with_content(port: int, url: str, min_size: int = 1000) -> Tuple[bool, float, int]:
+    """
+    Проверка с загрузкой контента и проверкой размера.
+    Возвращает (успех, время, размер_байт).
+    """
+    try:
+        t0 = time.time()
+        r = subprocess.run(
+            ["curl", "-x", f"socks5h://127.0.0.1:{port}",
+             "-m", str(CFG.REQUEST_TIMEOUT),
+             "--connect-timeout", str(CFG.CONNECTION_TIMEOUT),
+             "-s", "-o", "/dev/null", "-w", "%{http_code} %{size_download}",
+             url],
+            capture_output=True, timeout=CFG.REQUEST_TIMEOUT + 2,
+        )
+        elapsed = time.time() - t0
+        parts = r.stdout.decode().strip().split()
+        code = parts[0] if parts else "000"
+        size = int(parts[1]) if len(parts) > 1 else 0
+        
+        success = code in ("200","204","301","302") and size >= min_size
+        return success, elapsed, size
+    except:
+        return False, float(CFG.REQUEST_TIMEOUT), 0
+
 # ==================== БЕЗОПАСНОСТЬ ====================
 def quick_security_check(key: str) -> Tuple[bool, str]:
     for p in ("exec=","command=","shell=","javascript:","eval("):
@@ -510,6 +691,117 @@ def quick_security_check(key: str) -> Tuple[bool, str]:
     if key.startswith("vmess://") and "scy=none" in key.lower():
         return False, "VMess без шифрования"
     return True, "OK"
+
+# ==================== ОПРЕДЕЛЕНИЕ СТРАНЫ ====================
+# Кэш для IP адресов и стран
+_ip_country_cache: Dict[str, str] = {}
+_host_ip_cache: Dict[str, str] = {}
+
+def extract_host_from_key(key: str) -> Optional[str]:
+    """Извлекает хост из VPN ключа"""
+    try:
+        host = ""
+        for proto in ("vless://", "trojan://", "hysteria2://", "vmess://", "ss://"):
+            if key.startswith(proto):
+                if proto == "vmess://":
+                    raw = key.replace("vmess://", "")
+                    raw += "=" * (4 - len(raw) % 4)
+                    host = json.loads(base64.b64decode(raw).decode("utf-8")).get("add", "")
+                else:
+                    rest = key.replace(proto, "").split("@", 1)
+                    part = rest[-1] if len(rest) > 1 else rest[0]
+                    host = part.split("?")[0].split("#")[0]
+                    if ":" in host:
+                        host = host.rsplit(":", 1)[0]
+                    # Убираем квадратные скобки для IPv6
+                    if host.startswith("[") and "]" in host:
+                        host = host[1:host.index("]")]
+                break
+        return host.strip() if host else None
+    except:
+        return None
+
+def get_country_code(host: str) -> Optional[str]:
+    """
+    Определяет код страны по хосту (домен или IP)
+    Возвращает код страны (например, 'RU', 'DE') или None
+    """
+    if not host:
+        return None
+    
+    # Проверяем кэш
+    if host in _host_ip_cache:
+        ip = _host_ip_cache[host]
+        if ip in _ip_country_cache:
+            return _ip_country_cache[ip]
+    
+    # Если это IP адрес
+    try:
+        ipaddress.ip_address(host)
+        ip = host
+    except ValueError:
+        # Это домен, резолвим IP
+        try:
+            ip = socket.gethostbyname(host)
+            _host_ip_cache[host] = ip
+        except:
+            # Не удалось резолвить, пробуем по TLD
+            return get_country_by_tld(host)
+    
+    # Проверяем кэш IP
+    if ip in _ip_country_cache:
+        return _ip_country_cache[ip]
+    
+    # Определяем страну по IP диапазонам
+    for country, ranges in IP_COUNTRY_RANGES.items():
+        if any(ip.startswith(prefix) for prefix in ranges):
+            _ip_country_cache[ip] = country
+            return country
+    
+    # Пытаемся определить через ipinfo.io
+    try:
+        resp = requests.get(f"https://ipinfo.io/{ip}/json", timeout=3)
+        if resp.status_code == 200:
+            data = resp.json()
+            country = data.get("country", "").upper()
+            if country and len(country) == 2:
+                _ip_country_cache[ip] = country
+                return country
+    except:
+        pass
+    
+    return None
+
+def get_country_by_tld(host: str) -> Optional[str]:
+    """Определяет страну по TLD домена"""
+    host_lower = host.lower()
+    for tld, country in TLD_COUNTRY_MAP.items():
+        if host_lower.endswith(tld):
+            return country
+    return None
+
+def get_country_with_flag(key: str) -> Tuple[str, str]:
+    """
+    Определяет страну и возвращает (код, флаг+код)
+    Возвращает кортеж (country_code, country_with_flag)
+    """
+    host = extract_host_from_key(key)
+    if not host:
+        return ("", "UNKNOWN")
+    
+    country_code = get_country_code(host)
+    
+    if country_code:
+        flag = COUNTRY_FLAGS.get(country_code, "")
+        return (country_code, f"{flag}{country_code}")
+    
+    # Пытаемся по TLD
+    country_code = get_country_by_tld(host)
+    if country_code:
+        flag = COUNTRY_FLAGS.get(country_code, "")
+        return (country_code, f"{flag}{country_code}")
+    
+    return ("", "UNKNOWN")
 
 # ==================== ТИП КЛЮЧА ====================
 def _is_ru_cidr(ip: str) -> bool:
@@ -529,9 +821,26 @@ def _has_white_marker(key: str) -> bool:
     return any(m in kl for m in ("white","whitelist","bypass","обход","белый",
                                    "россия","russia","mobile","cable","ru-"))
 
-def determine_key_type(key: str, port: int) -> Tuple[str, str]:
+def determine_key_type(key: str, port: int, real_ip: Optional[str] = None) -> Tuple[str, str]:
+    """
+    Определяет тип ключа (white/universal/none) с проверкой реального трафика через VPN.
+    
+    Этапы проверки:
+    1. Проверка что SOCKS-порт открыт
+    2. Проверка что IP через прокси отличается от реального (трафик идёт через VPN)
+    3. Тест доступа к РФ сайтам
+    4. Тест доступа к зарубежным сайтам
+    """
     if not check_socks_port(port):
         return "none", "порт не открыт"
+
+    # === ГЛАВНАЯ ПРОВЕРКА: трафик реально идёт через VPN ===
+    if not check_proxy_ip_differs(port, real_ip):
+        return "none", "IP не изменился (трафик не через VPN)"
+    
+    # Получаем IP через прокси для информации
+    proxy_ip = get_ip_through_proxy(port)
+    ip_info = f"IP:{proxy_ip}" if proxy_ip else ""
 
     # Быстрые эвристики по содержимому ключа
     try:
@@ -540,7 +849,7 @@ def determine_key_type(key: str, port: int) -> Tuple[str, str]:
             sni = q.get("sni",[None])[0]
             if sni and _is_ru_domain(sni):
                 ok, t = curl_check(port, CFG.RUSSIAN_TEST_SITES[0])
-                if ok: return "white", f"SNI={sni} ({t:.1f}s)"
+                if ok: return "white", f"SNI={sni} ({t:.1f}s) {ip_info}"
     except: pass
 
     try:
@@ -548,12 +857,12 @@ def determine_key_type(key: str, port: int) -> Tuple[str, str]:
             host = key.split("@")[1].split(":")[0].split("?")[0]
             if _is_ru_cidr(host):
                 ok, t = curl_check(port, CFG.RUSSIAN_TEST_SITES[0])
-                if ok: return "white", f"РФ IP {host} ({t:.1f}s)"
+                if ok: return "white", f"РФ IP {host} ({t:.1f}s) {ip_info}"
     except: pass
 
     if _has_white_marker(key):
         ok, t = curl_check(port, CFG.RUSSIAN_TEST_SITES[0])
-        if ok: return "white", f"маркер РФ ({t:.1f}s)"
+        if ok: return "white", f"маркер РФ ({t:.1f}s) {ip_info}"
 
     # Полный тест РФ
     ru_ok, ru_t = False, 0.0
@@ -569,19 +878,19 @@ def determine_key_type(key: str, port: int) -> Tuple[str, str]:
     for site in CFG.FOREIGN_TEST_SITES:
         ok, t = curl_check(port, site)
         if ok:
-            return "universal", f"РФ+Зарубеж ({ru_t:.1f}s + {t:.1f}s)"
+            return "universal", f"РФ+Зарубеж ({ru_t:.1f}s + {t:.1f}s) {ip_info}"
 
-    return "white", f"только РФ ({ru_t:.1f}s)"
+    return "white", f"только РФ ({ru_t:.1f}s) {ip_info}"
 
 # ==================== ПРОВЕРКА ОДНОГО КЛЮЧА ====================
-def check_single_key(key: str, port: int) -> Tuple[bool, str, Optional[str], str, str]:
+def check_single_key(key: str, port: int, real_ip: Optional[str] = None) -> Tuple[bool, str, Optional[str], str, str, str]:
     ok, msg = quick_security_check(key)
     if not ok:
-        return False, "Безопасность", None, "none", msg
+        return False, "Безопасность", None, "none", msg, ""
 
     config = create_xray_config(key, port)
     if not config:
-        return False, "Ошибка парсинга", None, "none", ""
+        return False, "Ошибка парсинга", None, "none", "", ""
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
         json.dump(config, f)
@@ -590,14 +899,16 @@ def check_single_key(key: str, port: int) -> Tuple[bool, str, Optional[str], str
     xray = XrayManager(cfg_path, port)
     try:
         if not xray.start():
-            return False, "Xray не запустился", None, "none", ""
-        ktype, details = determine_key_type(key, port)
+            return False, "Xray не запустился", None, "none", "", ""
+        ktype, details = determine_key_type(key, port, real_ip)
         if ktype == "none":
-            return False, "Не работает", None, "none", details
+            return False, "Не работает", None, "none", details, ""
         label = "Белый список" if ktype == "white" else "Универсальный"
-        return True, label, key, ktype, details
+        # Определяем страну с флагом
+        country_code, country_flag = get_country_with_flag(key)
+        return True, label, key, ktype, details, country_flag
     except Exception as e:
-        return False, "Ошибка", None, "none", str(e)[:40]
+        return False, "Ошибка", None, "none", str(e)[:40], ""
     finally:
         xray.stop()
         try: os.unlink(cfg_path)
@@ -676,13 +987,19 @@ def get_country(key: str) -> str:
     except:
         return ""
 
-def rename_key(key: str) -> str:
+def rename_key(key: str, country_flag: str = "") -> str:
     base = key.split("#",1)[0].rstrip("#")
-    country = get_country(key)
-    label = f"Шкатулка запретов — {country}" if country else "Шкатулка запретов"
+    if country_flag:
+        label = f"Шкатулка запретов — {country_flag}"
+    else:
+        country = get_country(key)
+        label = f"Шкатулка запретов — {country}" if country else "Шкатулка запретов"
     return f"{base}#{label}"
 
 # ==================== ЯДРО: ПРОВЕРКА ПОДПИСКИ ====================
+# Глобальное хранилище для флагов стран
+_country_flags_cache: Dict[str, str] = {}
+
 def check_subscription(
     sub_index: int,
     total_subs: int,
@@ -692,6 +1009,7 @@ def check_subscription(
     global_universal: List[str],
     stats: dict,
     stop_event: threading.Event,
+    real_ip: Optional[str] = None,
 ) -> None:
     n = len(keys)
     # Пул = min(ключей, MAX_WORKERS_PER_SUB)
@@ -702,18 +1020,20 @@ def check_subscription(
     print(f"\n{'─'*70}")
     print(f"📦 [{sub_index}/{total_subs}] {short_url}")
     print(f"   Ключей: {n} | Потоков: {workers}")
+    if real_ip:
+        print(f"   Реальный IP: {real_ip}")
 
     sub_white = sub_universal = sub_failed = 0
     t0 = time.time()
 
     def _worker(key: str):
         if stop_event.is_set():
-            return False, "Остановлено", None, "none", ""
+            return False, "Остановлено", None, "none", "", ""
         _global_semaphore.acquire()
         try:
             port = alloc_port()
             time.sleep(random.uniform(0, 0.03))
-            return check_single_key(key, port)
+            return check_single_key(key, port, real_ip)
         finally:
             _global_semaphore.release()
 
@@ -726,7 +1046,7 @@ def check_subscription(
                     break
                 checked += 1
                 try:
-                    success, reason, wkey, ktype, details = fut.result(timeout=CFG.TOTAL_TIMEOUT)
+                    success, reason, wkey, ktype, details, country_flag = fut.result(timeout=CFG.TOTAL_TIMEOUT)
                 except Exception:
                     sub_failed += 1
                     continue
@@ -734,15 +1054,20 @@ def check_subscription(
                 if success and wkey:
                     elapsed = time.time() - t0
                     speed = checked / elapsed * 60 if elapsed else 0
+                    # Сохраняем флаг страны в кэш
+                    if country_flag and wkey:
+                        _country_flags_cache[wkey] = country_flag
                     if ktype == "white":
                         global_white.append(wkey)
                         sub_white += 1
-                        print(f"  🏳️  [{checked}/{n}] {details}  "
+                        country_info = f" {country_flag}" if country_flag else ""
+                        print(f"  🏳️  [{checked}/{n}] {country_info} {details}  "
                               f"(всего белых: {len(global_white)}, {speed:.0f}/мин)")
                     else:
                         global_universal.append(wkey)
                         sub_universal += 1
-                        print(f"  🌍 [{checked}/{n}] {details}  "
+                        country_info = f" {country_flag}" if country_flag else ""
+                        print(f"  🌍 [{checked}/{n}] {country_info} {details}  "
                               f"(всего универс: {len(global_universal)}, {speed:.0f}/мин)")
                 else:
                     sub_failed += 1
@@ -768,9 +1093,17 @@ def save_keys(white_keys: List[str], universal_keys: List[str]):
     os.makedirs(CFG.RU_DIR, exist_ok=True)
     os.makedirs(CFG.EURO_DIR, exist_ok=True)
 
-    print("🔍 Определяем страны...")
-    white_renamed     = [rename_key(k) for k in white_keys]
-    universal_renamed = [rename_key(k) for k in universal_keys]
+    print("🔍 Добавляем флаги стран...")
+    # Используем флаги из кэша или определяем заново
+    white_renamed = []
+    for k in white_keys:
+        flag = _country_flags_cache.get(k, "")
+        white_renamed.append(rename_key(k, flag))
+    
+    universal_renamed = []
+    for k in universal_keys:
+        flag = _country_flags_cache.get(k, "")
+        universal_renamed.append(rename_key(k, flag))
 
     if white_keys:
         p = os.path.join(CFG.RU_DIR, "ru_white.txt")
