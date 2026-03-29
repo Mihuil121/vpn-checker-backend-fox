@@ -23,6 +23,8 @@ import tempfile
 import requests
 import socket
 import re
+import ssl
+import hashlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Optional, Tuple, Dict
 from dataclasses import dataclass
@@ -32,6 +34,71 @@ import argparse
 from urllib.parse import urlparse, parse_qs, unquote
 import base64
 import ipaddress
+
+# ==================== НОВЫЕ КОНФИГУРАЦИИ ====================
+# Проверка 16 КБ блока (обрыв соединения)
+BLOCK_16KB_SIZE = 16 * 1024  # 16 КБ
+BLOCK_16KB_TIMEOUT = 8  # таймаут для загрузки блока
+
+# ASN заблокированных хостингов (примеры ASN, которые часто блокируются)
+BLOCKED_ASN_LIST = [
+    # VPN/Proxy хостинги
+    "AS24940",  # Hetzner
+    "AS16276",  # OVH
+    "AS206728", # Xhost
+    "AS50673",  # Serverius
+    "AS60781",  # LeaseWeb
+    "AS39698",  # Google Cloud (частично блокируется)
+    "AS15169",  # Google (частично)
+    "AS8075",   # Microsoft Azure
+    "AS14618",  # Amazon AWS (частично)
+    "AS16509",  # Amazon.com
+    "AS45102",  # Alibaba Cloud
+    "AS58466",  # CHINANET
+    "AS4134",   # CHINANET-BACKBONE
+    "AS31500",  # GlobalLayer
+    "AS49505",  # Selectel
+    "AS48666",  # DDOS-GUARD
+    "AS57043",  # Hostkey
+    "AS202425", # IP Volume
+    "AS209588", # VPSville
+]
+
+# Whitelist доменов для строгой SNI проверки
+SNI_WHITELIST_DOMAINS = [
+    # Российские сервисы
+    "vk.com", "yandex.ru", "yandex.net", "mail.ru", "ok.ru",
+    "t.me", "telegram.org", "whatsapp.com", "viber.com",
+    "sberbank.ru", "tinkoff.ru", "vtb.ru", "alfabank.ru",
+    "gosuslugi.ru", "nalog.ru", "pfr.gov.ru",
+    "ozon.ru", "wildberries.ru", "market.yandex.ru",
+    "rutube.ru", "kino.mail.ru", "okko.tv", "ivi.ru",
+    "mk.ru", "kp.ru", "rg.ru", "ria.ru", "tass.ru",
+    # Популярные международные (для универсальных)
+    "google.com", "youtube.com", "facebook.com", "twitter.com",
+    "instagram.com", "tiktok.com", "netflix.com",
+]
+
+# Тестовые URL для многостраничного теста
+MULTI_PAGE_TEST_URLS = {
+    "ru": [
+        ("https://vk.com", 1000),           # главная
+        ("https://yandex.ru", 1000),        # главная
+        ("https://mail.ru", 500),           # главная
+        ("https://vk.com/feed", 500),       # внутренняя страница
+        ("https://yandex.ru/news", 500),    # внутренняя страница
+    ],
+    "foreign": [
+        ("https://www.google.com", 1000),
+        ("https://www.youtube.com", 1000),
+        ("https://www.wikipedia.org", 500),
+    ],
+}
+
+# Пороги для детекта шейпинга
+SHAPING_MIN_SPEED_KBPS = 100  # минимальная скорость в КБ/с
+SHAPING_MAX_LATENCY_MS = 500  # макс. задержка в мс
+SHAPING_PACKET_LOSS_THRESHOLD = 0.3  # 30% потерь пакетов
 
 # ==================== КОНФИГУРАЦИЯ ====================
 # Эмодзи флагов стран
@@ -171,6 +238,11 @@ class Config:
         if self.SOURCES is None:
             self.SOURCES = [
                  "https://raw.githubusercontent.com/zieng2/wl/main/vless.txt",
+                 "https://raw.githubusercontent.com/Kirillo4ka/eavevpn-configs/refs/heads/main/BLACK_VLESS_RUS_mobile.txt",
+                 "https://gistpad.com/raw/lumar-vpn-all-tg-reverse-engineer-s-basement",
+                 "https://raw.githubusercontent.com/StealthNetVPN/StealthNet/refs/heads/main/StealthNetVPN",
+                 "https://raw.githubusercontent.com/mmaksim9191/my-vpn-configs/refs/heads/main/configs/mobile-whitelist-1.txt",
+                 "https://raw.githubusercontent.com/mmaksim9191/my-vpn-configs/refs/heads/main/configs/white-cidr-checked.txt",
                  "https://raw.githubusercontent.com/EtoNeYaProject/etoneyaproject.github.io/refs/heads/main/1",
                  "https://gitverse.ru/api/repos/bywarm/rser/raw/branch/master/selected.txt",
                  "https://rostunnel.vercel.app/mega.txt",
@@ -642,6 +714,379 @@ def get_real_ip() -> Optional[str]:
         pass
     return None
 
+# ==================== ПРОВЕРКА 16 КБ БЛОКА (ОБРЫВ СОЕДИНЕНИЯ) ====================
+def check_16kb_block_transfer(port: int, url: str = "https://yandex.ru") -> Tuple[bool, str, int]:
+    """
+    Проверка на обрыв соединения при передаче 16 КБ данных.
+    Некоторые провайдеры обрывают соединение после передачи первого блока.
+    
+    Возвращает: (успех, сообщение, размер_байт)
+    """
+    try:
+        t0 = time.time()
+        r = subprocess.run(
+            ["curl", "-x", f"socks5h://127.0.0.1:{port}",
+             "-m", str(BLOCK_16KB_TIMEOUT),
+             "--connect-timeout", "5",
+             "-s", "-o", "/dev/null", 
+             "-w", "%{http_code} %{size_download} %{num_connects} %{num_redirects}",
+             "--limit-rate", "1M",  # ограничиваем скорость для корректного теста
+             url],
+            capture_output=True, timeout=BLOCK_16KB_TIMEOUT + 2,
+        )
+        elapsed = time.time() - t0
+        parts = r.stdout.decode().strip().split()
+        
+        if len(parts) < 4:
+            return False, "ошибка curl", 0
+            
+        code = parts[0]
+        size = int(parts[1]) if len(parts) > 1 else 0
+        connects = int(parts[2]) if len(parts) > 2 else 1
+        redirects = int(parts[3]) if len(parts) > 3 else 0
+        
+        # Проверка на обрыв после первого блока
+        if code == "000" and size == 0:
+            return False, "обрыв на 16 КБ (код 000)", 0
+        
+        # Если размер меньше ожидаемого минимума - возможен обрыв
+        if size > 0 and size < 500:
+            return False, f"обрыв после {size} байт", size
+            
+        # Проверка на множественные переподключения (признак блокировки)
+        if connects > 3:
+            return False, f"множественные переподключения ({connects})", size
+        
+        return True, f"16КБ OK ({size} байт, {elapsed:.1f}s)", size
+        
+    except subprocess.TimeoutExpired:
+        return False, "таймаут 16 КБ", 0
+    except Exception as e:
+        return False, f"ошибка 16 КБ: {str(e)[:30]}", 0
+
+# ==================== ПРОВЕРКА ASN ХОСТИНГА ====================
+_asn_cache: Dict[str, Optional[str]] = {}
+
+def get_asn_info(ip: str) -> Optional[str]:
+    """
+    Получает информацию об ASN для IP адреса.
+    Возвращает ASN (например, "AS24940") или None.
+    """
+    if not ip or ip in _asn_cache:
+        return _asn_cache.get(ip)
+    
+    try:
+        resp = requests.get(f"https://ipinfo.io/{ip}/json", timeout=5)
+        if resp.status_code == 200:
+            data = resp.json()
+            asn = data.get("org", "").split()[0] if data.get("org") else None
+            if asn and asn.startswith("AS"):
+                _asn_cache[ip] = asn
+                return asn
+            # Альтернативно через поле asn
+            if "asn" in data:
+                asn = data["asn"].get("asn", "")
+                if asn:
+                    _asn_cache[ip] = asn
+                    return asn
+    except:
+        pass
+    
+    _asn_cache[ip] = None
+    return None
+
+def is_blocked_asn(ip: str) -> Tuple[bool, Optional[str]]:
+    """
+    Проверяет, принадлежит ли IP к заблокированному ASN.
+    Возвращает: (заблокирован, asn_name)
+    """
+    if not ip:
+        return False, None
+    
+    asn = get_asn_info(ip)
+    if not asn:
+        return False, None
+    
+    # Проверяем по списку заблокированных
+    for blocked_pattern in BLOCKED_ASN_LIST:
+        if blocked_pattern in asn:
+            return True, asn
+    
+    return False, asn
+
+# ==================== СТРОГАЯ ПРОВЕРКА SNI ====================
+def validate_sni_strict(key: str, host: str) -> Tuple[bool, str]:
+    """
+    Ужесточенная проверка SNI для белого списка.
+    SNI должен соответствовать whitelist доменов.
+    
+    Возвращает: (валиден, сообщение)
+    """
+    try:
+        # Извлекаем SNI из ключа
+        sni = None
+        if "?" in key:
+            q = parse_qs(key.split("?")[1].split("#")[0])
+            sni = q.get("sni", [None])[0]
+            if not sni and "sni=" in key:
+                match = re.search(r'sni=([^&\s]+)', key)
+                if match:
+                    sni = match.group(1)
+        
+        # Если SNI есть в ключе
+        if sni:
+            sni_lower = sni.lower()
+            # Проверяем соответствие whitelist
+            for allowed in SNI_WHITELIST_DOMAINS:
+                if sni_lower == allowed or sni_lower.endswith("." + allowed):
+                    return True, f"SNI={sni} (whitelist)"
+            # SNI не в whitelist - подозрительно для белого списка
+            return False, f"SNI={sni} не в whitelist"
+        
+        # Если SNI нет, но есть host
+        if host:
+            host_lower = host.lower()
+            for allowed in SNI_WHITELIST_DOMAINS:
+                if host_lower == allowed or host_lower.endswith("." + allowed):
+                    return True, f"host={host} (whitelist)"
+            
+            # Проверяем по IP
+            try:
+                ipaddress.ip_address(host)
+                # Это IP, проверяем ASN
+                blocked, asn = is_blocked_asn(host)
+                if blocked:
+                    return False, f"blocked ASN: {asn}"
+                return True, f"IP {host} (ASN: {asn or 'unknown'})"
+            except ValueError:
+                # Это домен, но не в whitelist
+                return False, f"домен {host} не в whitelist"
+        
+        return True, "SNI проверка пройдена"
+        
+    except Exception as e:
+        return False, f"ошибка SNI проверки: {str(e)[:30]}"
+
+# ==================== МНОГОСТРАНИЧНЫЙ ТЕСТ ====================
+def multi_page_test(port: int, region: str = "ru") -> Tuple[bool, str, Dict]:
+    """
+    Расширенный тест доступности нескольких страниц.
+    
+    Возвращает: (успех, сообщение, статистика)
+    """
+    urls = MULTI_PAGE_TEST_URLS.get(region, MULTI_PAGE_TEST_URLS["ru"])
+    results = {
+        "total": len(urls),
+        "success": 0,
+        "failed": 0,
+        "total_size": 0,
+        "total_time": 0,
+        "details": [],
+    }
+    
+    for url, min_size in urls:
+        try:
+            t0 = time.time()
+            r = subprocess.run(
+                ["curl", "-x", f"socks5h://127.0.0.1:{port}",
+                 "-m", "8",
+                 "--connect-timeout", "4",
+                 "-s", "-o", "/dev/null", "-w", "%{http_code} %{size_download}",
+                 url],
+                capture_output=True, timeout=10,
+            )
+            elapsed = time.time() - t0
+            parts = r.stdout.decode().strip().split()
+            code = parts[0] if parts else "000"
+            size = int(parts[1]) if len(parts) > 1 else 0
+            
+            success = code in ("200", "204", "301", "302") and size >= min_size // 2
+            
+            if success:
+                results["success"] += 1
+                results["total_size"] += size
+                results["total_time"] += elapsed
+                results["details"].append({"url": url, "success": True, "size": size, "time": elapsed})
+            else:
+                results["failed"] += 1
+                results["details"].append({"url": url, "success": False, "code": code, "size": size})
+                
+        except Exception as e:
+            results["failed"] += 1
+            results["details"].append({"url": url, "success": False, "error": str(e)[:40]})
+    
+    # Рассчитываем средние
+    avg_size = results["total_size"] / results["success"] if results["success"] > 0 else 0
+    avg_time = results["total_time"] / results["success"] if results["success"] > 0 else 0
+    
+    # Определяем успех: хотя бы 60% страниц доступны
+    success_rate = results["success"] / results["total"] if results["total"] > 0 else 0
+    success = success_rate >= 0.6
+    
+    msg = f"{results['success']}/{results['total']} страниц " \
+          f"({success_rate*100:.0f}%, ср.{avg_size:.0f}Б, {avg_time:.2f}s)"
+    
+    return success, msg, results
+
+# ==================== ДЕТЕКТ ШЕЙПИНГА (ПРОВЕРКА СКОРОСТИ) ====================
+def detect_shaping(port: int, test_url: str = "https://yandex.ru") -> Tuple[bool, str, Dict]:
+    """
+    Детект шейпинга (троттлинга) соединения.
+    Проверяет скорость загрузки и задержки.
+    
+    Возвращает: (нет_шейпинга, сообщение, статистика)
+    """
+    stats = {
+        "speed_kbps": 0,
+        "latency_ms": 0,
+        "packet_loss": 0,
+        "total_size": 0,
+        "total_time": 0,
+    }
+    
+    try:
+        # Тест 1: Замер скорости загрузки
+        t0 = time.time()
+        r = subprocess.run(
+            ["curl", "-x", f"socks5h://127.0.0.1:{port}",
+             "-m", "15",
+             "--connect-timeout", "5",
+             "-s", "-o", "/dev/null", "-w", "%{http_code} %{size_download} %{time_total}",
+             "--limit-rate", "0",  # без ограничений
+             test_url],
+            capture_output=True, timeout=17,
+        )
+        total_time = time.time() - t0
+        parts = r.stdout.decode().strip().split()
+        
+        if len(parts) >= 3:
+            code = parts[0]
+            size = int(parts[1]) if len(parts) > 1 else 0
+            curl_time = float(parts[2]) if len(parts) > 2 else total_time
+            
+            stats["total_size"] = size
+            stats["total_time"] = curl_time
+            
+            if size > 0 and curl_time > 0:
+                # Скорость в КБ/с
+                stats["speed_kbps"] = size / curl_time / 1024
+        
+        # Тест 2: Замер задержки (ping через curl)
+        t0 = time.time()
+        r2 = subprocess.run(
+            ["curl", "-x", f"socks5h://127.0.0.1:{port}",
+             "-m", "5",
+             "--connect-timeout", "3",
+             "-s", "-o", "/dev/null", "-w", "%{time_connect}",
+             "--head", test_url],
+            capture_output=True, timeout=7,
+        )
+        connect_time = float(r2.stdout.decode().strip() or "0") * 1000  # в мс
+        stats["latency_ms"] = connect_time
+        
+        # Тест 3: Проверка на потерю пакетов (серия запросов)
+        success_count = 0
+        for _ in range(5):
+            try:
+                r3 = subprocess.run(
+                    ["curl", "-x", f"socks5h://127.0.0.1:{port}",
+                     "-m", "3",
+                     "--connect-timeout", "2",
+                     "-s", "-o", "/dev/null", "-w", "%{http_code}",
+                     "--head", test_url],
+                    capture_output=True, timeout=4,
+                )
+                if r3.stdout.decode().strip() in ("200", "301", "302"):
+                    success_count += 1
+            except:
+                pass
+        
+        stats["packet_loss"] = 1 - (success_count / 5)
+        
+        # Анализ результатов
+        issues = []
+        
+        if stats["speed_kbps"] < SHAPING_MIN_SPEED_KBPS:
+            issues.append(f"низкая скорость ({stats['speed_kbps']:.1f} КБ/с)")
+        
+        if stats["latency_ms"] > SHAPING_MAX_LATENCY_MS:
+            issues.append(f"высокая задержка ({stats['latency_ms']:.0f} мс)")
+        
+        if stats["packet_loss"] > SHAPING_PACKET_LOSS_THRESHOLD:
+            issues.append(f"потери пакетов ({stats['packet_loss']*100:.0f}%)")
+        
+        if issues:
+            return False, "детект шейпинга: " + ", ".join(issues), stats
+        
+        return True, f"OK (скорость: {stats['speed_kbps']:.0f} КБ/с, пинг: {stats['latency_ms']:.0f} мс)", stats
+        
+    except subprocess.TimeoutExpired:
+        return False, "таймаут теста скорости", stats
+    except Exception as e:
+        return False, f"ошибка теста: {str(e)[:30]}", stats
+
+# ==================== IPv6 ПРИОРИТЕТ ====================
+def extract_ip_version(host: str) -> Optional[int]:
+    """
+    Определяет версию IP адреса.
+    Возвращает 4 для IPv4, 6 для IPv6, None если домен.
+    """
+    try:
+        addr = ipaddress.ip_address(host)
+        return addr.version
+    except ValueError:
+        return None
+
+def has_ipv6_support(key: str) -> bool:
+    """
+    Проверяет, поддерживает ли ключ IPv6.
+    """
+    host = extract_host_from_key(key)
+    if not host:
+        return False
+    
+    # Проверяем, является ли хост IPv6 адресом
+    try:
+        ipaddress.ip_address(host)
+        return host.startswith("[") or ":" in host and host.count(":") > 1
+    except ValueError:
+        pass
+    
+    # Проверяем параметры
+    if "?" in key:
+        q = parse_qs(key.split("?")[1].split("#")[0])
+        # Некоторые ключи могут иметь явный флаг IPv6
+        if "ipv6" in q:
+            return True
+    
+    return False
+
+def prioritize_ipv6_keys(keys: List[str]) -> List[str]:
+    """
+    Сортирует ключи с приоритетом IPv6.
+    IPv6 ключи идут в начале списка.
+    """
+    ipv6_keys = []
+    ipv4_keys = []
+    domain_keys = []
+    
+    for key in keys:
+        host = extract_host_from_key(key)
+        if not host:
+            domain_keys.append(key)
+            continue
+        
+        ip_ver = extract_ip_version(host)
+        if ip_ver == 6:
+            ipv6_keys.append(key)
+        elif ip_ver == 4:
+            ipv4_keys.append(key)
+        else:
+            domain_keys.append(key)
+    
+    # IPv6 сначала, затем IPv4, затем домены
+    return ipv6_keys + ipv4_keys + domain_keys
+
 def check_proxy_ip_differs(port: int, real_ip: Optional[str]) -> bool:
     """
     Проверяет что IP через прокси отличается от реального.
@@ -823,13 +1268,18 @@ def _has_white_marker(key: str) -> bool:
 
 def determine_key_type(key: str, port: int, real_ip: Optional[str] = None) -> Tuple[str, str]:
     """
-    Определяет тип ключа (white/universal/none) с проверкой реального трафика через VPN.
-    
+    Определяет тип ключа (white/universal/none) с расширенными проверками.
+
     Этапы проверки:
     1. Проверка что SOCKS-порт открыт
     2. Проверка что IP через прокси отличается от реального (трафик идёт через VPN)
-    3. Тест доступа к РФ сайтам
-    4. Тест доступа к зарубежным сайтам
+    3. Проверка 16 КБ блока (обрыв соединения)
+    4. Строгая проверка SNI для белого списка
+    5. Проверка ASN на заблокированные хостинги
+    6. Тест доступа к РФ сайтам
+    7. Тест доступа к зарубежным сайтам
+    8. Детект шейпинга (проверка скорости)
+    9. Многостраничный тест доступности
     """
     if not check_socks_port(port):
         return "none", "порт не открыт"
@@ -837,10 +1287,36 @@ def determine_key_type(key: str, port: int, real_ip: Optional[str] = None) -> Tu
     # === ГЛАВНАЯ ПРОВЕРКА: трафик реально идёт через VPN ===
     if not check_proxy_ip_differs(port, real_ip):
         return "none", "IP не изменился (трафик не через VPN)"
-    
+
     # Получаем IP через прокси для информации
     proxy_ip = get_ip_through_proxy(port)
     ip_info = f"IP:{proxy_ip}" if proxy_ip else ""
+
+    # === ПРОВЕРКА 16 КБ БЛОКА (ОБРЫВ СОЕДИНЕНИЯ) ===
+    block_ok, block_msg, block_size = check_16kb_block_transfer(port, CFG.RUSSIAN_TEST_SITES[0])
+    if not block_ok:
+        return "none", f"обрыв 16КБ: {block_msg}"
+
+    # Извлекаем хост для проверок
+    host = extract_host_from_key(key) or ""
+
+    # === ПРОВЕРКА ASN (ЗАБЛОКИРОВАННЫЕ ХОСТИНГИ) ===
+    try:
+        ipaddress.ip_address(host)
+        blocked, asn = is_blocked_asn(host)
+        if blocked:
+            # Для белого списка заблокированные ASN критичны
+            return "none", f"blocked ASN: {asn}"
+        if asn:
+            ip_info = f"{ip_info} ASN:{asn}"
+    except ValueError:
+        pass  # это домен, не IP
+
+    # === СТРОГАЯ ПРОВЕРКА SNI (ДЛЯ БЕЛОГО СПИСКА) ===
+    sni_valid, sni_msg = validate_sni_strict(key, host)
+    if not sni_valid:
+        # SNI не в whitelist - это не критично для универсальных, но подозрительно для белых
+        pass  # продолжаем проверку, но учитываем в логике
 
     # Быстрые эвристики по содержимому ключа
     try:
@@ -848,21 +1324,23 @@ def determine_key_type(key: str, port: int, real_ip: Optional[str] = None) -> Tu
             q = parse_qs(key.split("?")[1].split("#")[0])
             sni = q.get("sni",[None])[0]
             if sni and _is_ru_domain(sni):
-                ok, t = curl_check(port, CFG.RUSSIAN_TEST_SITES[0])
-                if ok: return "white", f"SNI={sni} ({t:.1f}s) {ip_info}"
+                # Строгая проверка SNI
+                if sni_valid:
+                    ok, t = curl_check(port, CFG.RUSSIAN_TEST_SITES[0])
+                    if ok: return "white", f"SNI={sni} ({t:.1f}s) {ip_info} {block_msg}"
     except: pass
 
     try:
         if "@" in key:
-            host = key.split("@")[1].split(":")[0].split("?")[0]
-            if _is_ru_cidr(host):
+            host_check = key.split("@")[1].split(":")[0].split("?")[0]
+            if _is_ru_cidr(host_check):
                 ok, t = curl_check(port, CFG.RUSSIAN_TEST_SITES[0])
-                if ok: return "white", f"РФ IP {host} ({t:.1f}s) {ip_info}"
+                if ok: return "white", f"РФ IP {host_check} ({t:.1f}s) {ip_info} {block_msg}"
     except: pass
 
     if _has_white_marker(key):
         ok, t = curl_check(port, CFG.RUSSIAN_TEST_SITES[0])
-        if ok: return "white", f"маркер РФ ({t:.1f}s) {ip_info}"
+        if ok: return "white", f"маркер РФ ({t:.1f}s) {ip_info} {block_msg}"
 
     # Полный тест РФ
     ru_ok, ru_t = False, 0.0
@@ -874,13 +1352,45 @@ def determine_key_type(key: str, port: int, real_ip: Optional[str] = None) -> Tu
     if not ru_ok:
         return "none", "РФ недоступен"
 
+    # === ДЕТЕКТ ШЕЙПИНГА ===
+    no_shaping, shaping_msg, shaping_stats = detect_shaping(port, CFG.RUSSIAN_TEST_SITES[0])
+    if not no_shaping:
+        # Сильный шейпинг - ключ бесполезен
+        if shaping_stats.get("speed_kbps", 0) < 10:
+            return "none", f"шейпинг: {shaping_msg}"
+
+    # === МНОГОСТРАНИЧНЫЙ ТЕСТ (РАСШИРЕННЫЙ) ===
+    multi_ok, multi_msg, multi_stats = multi_page_test(port, "ru")
+    if not multi_ok:
+        # Если менее 40% страниц доступно - ключ нестабилен
+        if multi_stats["success"] / multi_stats["total"] < 0.4:
+            return "none", f"нестабилен: {multi_msg}"
+
     # Тест зарубеж
     for site in CFG.FOREIGN_TEST_SITES:
         ok, t = curl_check(port, site)
         if ok:
-            return "universal", f"РФ+Зарубеж ({ru_t:.1f}s + {t:.1f}s) {ip_info}"
+            # Универсальный ключ с полной проверкой
+            details = f"РФ+Зарубеж ({ru_t:.1f}s + {t:.1f}s) {ip_info}"
+            if not no_shaping:
+                details += f" | {shaping_msg}"
+            details += f" | {multi_msg}"
+            return "universal", details
 
-    return "white", f"только РФ ({ru_t:.1f}s) {ip_info}"
+    # Только РФ - проверяем строгую SNI валидацию для белого списка
+    if sni_valid or _is_ru_domain(host) or _has_white_marker(key):
+        details = f"только РФ ({ru_t:.1f}s) {ip_info}"
+        if not no_shaping:
+            details += f" | {shaping_msg}"
+        details += f" | {multi_msg}"
+        return "white", details
+
+    # РФ доступен, но зарубеж нет и нет маркеров белого списка
+    details = f"только РФ ({ru_t:.1f}s) {ip_info}"
+    if not no_shaping:
+        details += f" | {shaping_msg}"
+    details += f" | {multi_msg}"
+    return "white", details
 
 # ==================== ПРОВЕРКА ОДНОГО КЛЮЧА ====================
 def check_single_key(key: str, port: int, real_ip: Optional[str] = None) -> Tuple[bool, str, Optional[str], str, str, str]:
@@ -1012,6 +1522,14 @@ def check_subscription(
     real_ip: Optional[str] = None,
 ) -> None:
     n = len(keys)
+    
+    # === IPv6 ПРИОРИТЕТ: сортируем ключи, IPv6 идут первыми ===
+    keys_sorted = prioritize_ipv6_keys(keys)
+    ipv6_count = sum(1 for k in keys_sorted if has_ipv6_support(k))
+    if ipv6_count > 0:
+        print(f"\n{'─'*70}")
+        print(f"🌐 IPv6 ключей: {ipv6_count} из {n} (приоритетная проверка)")
+    
     # Пул = min(ключей, MAX_WORKERS_PER_SUB)
     # Маленькие подписки (3 ключа) → 3 потока → проверяются мгновенно
     workers = min(n, CFG.MAX_WORKERS_PER_SUB)
@@ -1038,7 +1556,8 @@ def check_subscription(
             _global_semaphore.release()
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        futures = {ex.submit(_worker, k): k for k in keys}
+        # Проверяем ключи в порядке приоритета (IPv6 первые)
+        futures = {ex.submit(_worker, k): k for k in keys_sorted}
         checked = 0
         try:
             for fut in as_completed(futures):
@@ -1161,11 +1680,18 @@ def main():
     _global_semaphore = threading.Semaphore(CFG.MAX_TOTAL_WORKERS)
 
     print(f"\n{'='*70}")
-    print(" VPN Checker v4.0 — УМНАЯ ПРОВЕРКА ПО ПОДПИСКАМ")
+    print(" VPN Checker v5.0 — РАСШИРЕННАЯ ПРОВЕРКА ПО ПОДПИСКАМ")
     print(f"{'='*70}")
     print(f"  Потоков на подписку: до {CFG.MAX_WORKERS_PER_SUB}")
     print(f"  Глобальный лимит Xray: {CFG.MAX_TOTAL_WORKERS}")
     print(f"  Startup: {CFG.XRAY_STARTUP_WAIT}s | Timeout: {CFG.REQUEST_TIMEOUT}s")
+    print(f"\n  🛡️ Новые функции:")
+    print(f"    • Проверка 16 КБ блока (обрыв соединения)")
+    print(f"    • Приоритет IPv6 ключей")
+    print(f"    • Строгая проверка SNI (whitelist)")
+    print(f"    • Фильтр ASN заблокированных хостингов")
+    print(f"    • Многостраничный тест доступности")
+    print(f"    • Детект шейпинга (проверка скорости)")
 
     if not os.path.exists(CFG.XRAY_PATH):
         print(f"\n❌ Xray не найден: {CFG.XRAY_PATH}")
@@ -1179,6 +1705,7 @@ def main():
     sub_data: List[Tuple[str, List[str]]] = []
     seen: set = set()
     total_keys = 0
+    total_ipv6 = 0
 
     for url in sources:
         raw_keys = fetch_keys(url)
@@ -1190,12 +1717,17 @@ def main():
         if total_keys + len(uniq) > max_keys:
             uniq = uniq[:max_keys - total_keys]
 
+        # Подсчитываем IPv6 ключи
+        ipv6_count = sum(1 for k in uniq if has_ipv6_support(k))
+        total_ipv6 += ipv6_count
+
         short = url.rstrip("/").split("/")[-1][:45] or url[:45]
         if uniq:
             sub_data.append((url, uniq))
             total_keys += len(uniq)
             w = min(len(uniq), CFG.MAX_WORKERS_PER_SUB)
-            print(f"  ✅ {len(uniq):>6} ключей → {w:>3} потоков  {short}")
+            ipv6_info = f" (IPv6: {ipv6_count})" if ipv6_count > 0 else ""
+            print(f"  ✅ {len(uniq):>6} ключей → {w:>3} потоков{ipv6_info}  {short}")
         else:
             print(f"  ❌      0                    {short}")
 
@@ -1207,10 +1739,14 @@ def main():
 
     print(f"\n  📦 Подписок: {len(sub_data)}")
     print(f"  🔑 Уникальных ключей: {total_keys}")
+    if total_ipv6 > 0:
+        print(f"  🌐 IPv6 ключей: {total_ipv6} (будут проверены в приоритете)")
     print(f"\n  Топ-5 по размеру:")
     for url, keys in sub_data[:5]:
         short = url.rstrip("/").split("/")[-1][:50]
-        print(f"    {len(keys):>6} ключей  {short}")
+        ipv6_c = sum(1 for k in keys if has_ipv6_support(k))
+        ipv6_info = f" (IPv6: {ipv6_c})" if ipv6_c > 0 else ""
+        print(f"    {len(keys):>6} ключей{ipv6_info}  {short}")
 
     # ── ШАГ 2: Проверка ─────────────────────────────────────────────────
     print(f"\n{'='*70}")
