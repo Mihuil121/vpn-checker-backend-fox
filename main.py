@@ -147,16 +147,44 @@ class Config:
             ]
         if self.FOREIGN_TEST_SITES is None:
             self.FOREIGN_TEST_SITES = [
-                "https://www.google.com",
-                "https://www.youtube.com",
+                "https://www.instagram.com",
                 "https://www.facebook.com",
+                "https://www.twitter.com",
             ]
         if self.SOURCES is None:
             # ===== ВСТАВЬ СВОИ ССЫЛКИ СЮДА =====
             self.SOURCES = [
                 "https://raw.githubusercontent.com/zieng2/wl/main/vless.txt",
                 "https://gitflic.ru/project/sigil/my-new-cool-project/blob/raw?file=whitelist",
+                "https://raw.githubusercontent.com/kort0881/sbornik-vless/refs/heads/main/subs/ss_001.txt",
+                "https://raw.githubusercontent.com/kort0881/sbornik-vless/refs/heads/main/subs/tuic_001.txt",   
+                "https://raw.githubusercontent.com/kort0881/sbornik-vless/refs/heads/main/subs/ss_002.txt",
+                "https://raw.githubusercontent.com/kort0881/sbornik-vless/refs/heads/main/subs/hysteria2_001.txt",
+                "https://raw.githubusercontent.com/kort0881/sbornik-vless/refs/heads/main/subs/vless_001.txt",
+                "https://raw.githubusercontent.com/kort0881/sbornik-vless/refs/heads/main/subs/vless_002.txt",
+                "https://raw.githubusercontent.com/kort0881/sbornik-vless/refs/heads/main/subs/vless_003.txt",
+                "https://raw.githubusercontent.com/kort0881/sbornik-vless/refs/heads/main/subs/vless_004.txt",
+                "https://raw.githubusercontent.com/kort0881/sbornik-vless/refs/heads/main/subs/vless_005.txt",
+                "https://raw.githubusercontent.com/kort0881/sbornik-vless/refs/heads/main/subs/vless_006.txt",
+                "https://raw.githubusercontent.com/kort0881/sbornik-vless/refs/heads/main/subs/vless_007.txt",
+                "https://raw.githubusercontent.com/kort0881/sbornik-vless/refs/heads/main/subs/vless_008.txt",
+                "https://raw.githubusercontent.com/kort0881/sbornik-vless/refs/heads/main/subs/vless_009.txt",
+                "https://raw.githubusercontent.com/kort0881/sbornik-vless/refs/heads/main/subs/vless_010.txt",
+                "https://raw.githubusercontent.com/kort0881/sbornik-vless/refs/heads/main/subs/vless_011.txt",
+                "https://raw.githubusercontent.com/kort0881/sbornik-vless/refs/heads/main/subs/vless_012.txt",
+                "https://raw.githubusercontent.com/kort0881/sbornik-vless/refs/heads/main/subs/vmess_001.txt",
+                "https://raw.githubusercontent.com/kort0881/sbornik-vless/refs/heads/main/subs/vmess_002.txt",
+                "https://raw.githubusercontent.com/kort0881/sbornik-vless/refs/heads/main/subs/vmess_003.txt",
+                "https://raw.githubusercontent.com/kort0881/sbornik-vless/refs/heads/main/subs/vmess_004.txt",
+                "https://raw.githubusercontent.com/kort0881/sbornik-vless/refs/heads/main/subs/vmess_005.txt",
+                "https://raw.githubusercontent.com/kort0881/sbornik-vless/refs/heads/main/subs/vmess_006.txt",
+                "https://raw.githubusercontent.com/kort0881/sbornik-vless/refs/heads/main/subs/vmess_007.txt",
+                "https://raw.githubusercontent.com/kort0881/sbornik-vless/refs/heads/main/subs/vmess_008.txt",
+                "https://raw.githubusercontent.com/kort0881/sbornik-vless/refs/heads/main/subs/trojan_001.txt",
+                "https://raw.githubusercontent.com/ssavnayt/AWCFG-CONFIG-LIST/refs/heads/main/Configs-all-country.txt",
+                "https://raw.githubusercontent.com/ssavnayt/AWCFG-CONFIG-LIST/refs/heads/main/Configs-AUTO.txt",
                 "https://raw.githubusercontent.com/V2RayRoot/V2Root-ConfigPilot/refs/heads/main/output/BestConfigs.txt",
+                "https://raw.githubusercontent.com/sakha1370/OpenRay/refs/heads/main/output/all_valid_proxies.txt",
                 "https://raw.githubusercontent.com/whoahaow/rjsxrd/refs/heads/main/githubmirror/default/1.txt",
                 "https://raw.githubusercontent.com/whoahaow/rjsxrd/refs/heads/main/githubmirror/bypass-unsecure/bypass-unsecure-1.txt",
                 "https://raw.githubusercontent.com/whoahaow/rjsxrd/refs/heads/main/githubmirror/bypass-unsecure/bypass-unsecure-2.txt",
@@ -403,6 +431,9 @@ CFG = Config()
 # Глобальный семафор — ограничивает суммарное кол-во Xray
 _global_semaphore: threading.Semaphore = None
 
+# Реальный IP машины (устанавливается один раз при старте)
+_real_ip: Optional[str] = None
+
 # Атомарный счётчик портов без коллизий
 _port_counter = 0
 _port_lock = threading.Lock()
@@ -632,6 +663,53 @@ def curl_check(port: int, url: str) -> Tuple[bool, float]:
         return False, float(CFG.REQUEST_TIMEOUT)
 
 
+def get_real_ip() -> Optional[str]:
+    """Получить реальный IP машины (без прокси). Вызывается один раз при старте."""
+    services = [
+        "https://api.ipify.org",
+        "https://ifconfig.me/ip",
+        "https://api4.my-ip.io/ip",
+        "https://ipv4.icanhazip.com",
+    ]
+    for url in services:
+        try:
+            r = requests.get(url, timeout=5)
+            if r.status_code == 200:
+                ip = r.text.strip()
+                if ip and len(ip) < 50 and "." in ip:
+                    return ip
+        except:
+            continue
+    return None
+
+
+# Запасные сервисы для проверки IP (если один заблокирует при массовых запросах)
+IP_CHECK_URLS = [
+    "https://ipinfo.io/ip",
+    "https://api.ipify.org",
+    "https://ifconfig.me/ip",
+]
+
+
+def get_proxy_ip(port: int) -> Optional[str]:
+    """Получить IP через прокси (socks5h). Пробует сервисы по очереди, останавливается на первом успешном.
+    Валидирует ответ — настоящий IP короткий и содержит точки, не HTML-страница ошибки."""
+    for url in IP_CHECK_URLS:
+        try:
+            r = subprocess.run(
+                ["curl", "-x", f"socks5h://127.0.0.1:{port}",
+                 "-m", "4", "--connect-timeout", "4",
+                 "-s", url],
+                capture_output=True, timeout=6,
+            )
+            ip = r.stdout.decode().strip()
+            if ip and len(ip) < 50 and "." in ip:
+                return ip
+        except:
+            continue
+    return None
+
+
 # ==================== БЕЗОПАСНОСТЬ ====================
 def quick_security_check(key: str) -> Tuple[bool, str]:
     for p in ("exec=","command=","shell=","javascript:","eval("):
@@ -667,61 +745,36 @@ def determine_key_type(key: str, port: int) -> Tuple[str, str]:
     """
     Определяет тип ключа (white/universal/none).
 
-    Этапы:
+    Логика:
     1. Проверка что SOCKS-порт открыт
-    2. Быстрые эвристики по содержимому ключа (SNI, IP, маркеры)
-    3. Тест доступа к РФ сайтам
-    4. Тест доступа к зарубежным сайтам
+    2. Тест зарубежных заблокированных сайтов — если отвечают, туннель реальный
+    3. Тест российских сайтов — если отвечают, проверяем IP (трафик идёт через прокси?)
+    4. Если IP совпадает с реальным → "none" (трафик мимо прокси)
+    5. Если ничего не отвечает → "none"
     """
     if not check_socks_port(port):
         return "none", "порт не открыт"
 
-    # Быстрые эвристики по содержимому ключа
-    try:
-        if "?" in key:
-            q = parse_qs(key.split("?")[1].split("#")[0])
-            sni = q.get("sni", [None])[0]
-            if sni and _is_ru_domain(sni):
-                ok, t = curl_check(port, CFG.RUSSIAN_TEST_SITES[0])
-                if ok:
-                    return "white", f"SNI={sni} ({t:.1f}s)"
-    except:
-        pass
-
-    try:
-        if "@" in key:
-            host_check = key.split("@")[1].split(":")[0].split("?")[0]
-            if _is_ru_cidr(host_check):
-                ok, t = curl_check(port, CFG.RUSSIAN_TEST_SITES[0])
-                if ok:
-                    return "white", f"РФ IP {host_check} ({t:.1f}s)"
-    except:
-        pass
-
-    if _has_white_marker(key):
-        ok, t = curl_check(port, CFG.RUSSIAN_TEST_SITES[0])
-        if ok:
-            return "white", f"маркер РФ ({t:.1f}s)"
-
-    # Полный тест РФ сайтов
-    ru_ok, ru_t = False, 0.0
-    for site in CFG.RUSSIAN_TEST_SITES:
-        ok, t = curl_check(port, site)
-        if ok:
-            ru_ok, ru_t = True, t
-            break
-
-    if not ru_ok:
-        return "none", "РФ недоступен"
-
-    # Тест зарубежных сайтов
+    # ── Тест зарубежных заблокированных сайтов ──
+    # Они заблокированы в РФ без VPN — если открылись, туннель 100% работает
     for site in CFG.FOREIGN_TEST_SITES:
         ok, t = curl_check(port, site)
         if ok:
-            return "universal", f"РФ+Зарубеж ({ru_t:.1f}s + {t:.1f}s)"
+            return "universal", f"Зарубеж OK ({t:.1f}s)"
 
-    # Только РФ — белый список
-    return "white", f"только РФ ({ru_t:.1f}s)"
+    # ── Тест российских сайтов ──
+    # Они доступны без VPN, поэтому проверяем IP — реально ли трафик через прокси
+    for site in CFG.RUSSIAN_TEST_SITES:
+        ok, t = curl_check(port, site)
+        if ok:
+            global _real_ip
+            if _real_ip:
+                proxy_ip = get_proxy_ip(port)
+                if proxy_ip and proxy_ip == _real_ip:
+                    return "none", f"IP не изменился — трафик мимо прокси"
+            return "white", f"только РФ ({t:.1f}s)"
+
+    return "none", "ничего не отвечает"
 
 
 # ==================== ПРОВЕРКА ОДНОГО КЛЮЧА ====================
@@ -1092,6 +1145,11 @@ def main():
     print(f"  Потоков на подписку: до {CFG.MAX_WORKERS_PER_SUB}")
     print(f"  Глобальный лимит Xray: {CFG.MAX_TOTAL_WORKERS}")
     print(f"  Startup: {CFG.XRAY_STARTUP_WAIT}s | Timeout: {CFG.REQUEST_TIMEOUT}s")
+
+    # Получаем реальный IP машины один раз при старте
+    global _real_ip
+    _real_ip = "109.110.91.167"
+    print(f"  🌐 Реальный IP: {_real_ip}")
 
     if not os.path.exists(CFG.XRAY_PATH):
         print(f"\n❌ Xray не найден: {CFG.XRAY_PATH}")
