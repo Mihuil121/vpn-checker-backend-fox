@@ -156,6 +156,8 @@ class Config:
             self.SOURCES = [
                 "https://raw.githubusercontent.com/zieng2/wl/main/vless.txt",
                 "https://gitflic.ru/project/sigil/my-new-cool-project/blob/raw?file=whitelist",
+                "https://cloud.sayori.cc/https://raw.githubusercontent.com/mbelspb-gif/ffsfsfssdf/refs/heads/main/TG-swordware",
+                "https://raw.githubusercontent.com/mbelspb-gif/ffsfsfssdf/refs/heads/main/TG-swordware",
                 "https://raw.githubusercontent.com/kort0881/sbornik-vless/refs/heads/main/subs/ss_001.txt",
                 "https://raw.githubusercontent.com/kort0881/sbornik-vless/refs/heads/main/subs/tuic_001.txt",   
                 "https://raw.githubusercontent.com/kort0881/sbornik-vless/refs/heads/main/subs/ss_002.txt",
