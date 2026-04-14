@@ -1,0 +1,92 @@
+[2026-04-11T05:59:11.775Z] info  code-server 4.115.0 1c6fb2dc200eb57c5c7d612004e18a5e6ae8b0ed
+[2026-04-11T05:59:11.780Z] info  Using user-data-dir /home/misha121/.local/share/code-server
+[2026-04-11T05:59:11.857Z] info  Using config file /home/misha121/.config/code-server/config.yaml
+[2026-04-11T05:59:11.858Z] info  HTTP server listening on http://0.0.0.0:8080/
+[2026-04-11T05:59:11.858Z] info    - Authentication is enabled
+[2026-04-11T05:59:11.859Z] info      - Using password from /home/misha121/.config/code-server/config.yaml
+[2026-04-11T05:59:11.859Z] info    - Not serving HTTPS
+[2026-04-11T05:59:11.859Z] info  Session server listening on /home/misha121/.local/share/code-server/code-server-ipc.sock
+[05:59:13] 
+
+
+
+
+[reconnection-grace-time] No CLI argument provided, using default: 10800000ms (10800s)
+[05:59:14] Extension host agent started.
+Failed login attempt {"remoteAddress":"192.168.1.54","userAgent":"Mozilla/5.0 (X11; Linux x86_64; rv:148.0) Gecko/20100101 Firefox/148.0","timestamp":1775887206}
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda_bg.wasm
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda.js
+[06:00:27] [192.168.1.54][66142b94][ManagementConnection] New connection established.
+[06:00:34] [192.168.1.54][7739b694][ExtensionHostConnection] New connection established.
+[06:00:34] [192.168.1.54][7739b694][ExtensionHostConnection] <826091> Launched Extension Host Process.
+[06:00:37] [192.168.1.54][7739b694][ExtensionHostConnection] <826091> [reconnection-grace-time] Extension host: read VSCODE_RECONNECTION_GRACE_TIME=10800000ms (10800s)
+
+[06:00:46] [192.168.1.54][66142b94][ManagementConnection] The client has disconnected gracefully, so the connection will be disposed.
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda_bg.wasm
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda.js
+[06:00:51] [192.168.1.54][c9ca83e7][ManagementConnection] New connection established.
+[06:00:54] [192.168.1.54][f0003d39][ExtensionHostConnection] New connection established.
+[06:00:54] [192.168.1.54][f0003d39][ExtensionHostConnection] <827050> Launched Extension Host Process.
+[06:00:57] [192.168.1.54][f0003d39][ExtensionHostConnection] <827050> [reconnection-grace-time] Extension host: read VSCODE_RECONNECTION_GRACE_TIME=10800000ms (10800s)
+
+File not found: /usr/lib/code-server/lib/vscode/extensions/github-authentication/dist/browser/extension.js
+File not found: /usr/lib/code-server/lib/vscode/extensions/emmet/dist/browser/emmetBrowserMain.js
+File not found: /usr/lib/code-server/lib/vscode/extensions/git-base/dist/browser/extension.js
+File not found: /usr/lib/code-server/lib/vscode/extensions/merge-conflict/dist/browser/mergeConflictMain.js
+[06:01:34] [192.168.1.54][c9ca83e7][ManagementConnection] The client has disconnected gracefully, so the connection will be disposed.
+[06:01:34] [192.168.1.54][f0003d39][ExtensionHostConnection] <827050> Extension Host Process exited with code: 0, signal: null.
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda.js
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda_bg.wasm
+[06:01:37] [192.168.1.54][9819af9b][ManagementConnection] New connection established.
+[06:01:41] [192.168.1.54][fda4138a][ExtensionHostConnection] New connection established.
+[06:01:41] [192.168.1.54][fda4138a][ExtensionHostConnection] <828075> Launched Extension Host Process.
+[06:01:43] [192.168.1.54][fda4138a][ExtensionHostConnection] <828075> [reconnection-grace-time] Extension host: read VSCODE_RECONNECTION_GRACE_TIME=10800000ms (10800s)
+
+[06:01:48] [192.168.1.54][9819af9b][ManagementConnection] The client has disconnected gracefully, so the connection will be disposed.
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda_bg.wasm
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda.js
+[06:01:52] [192.168.1.54][00ebaac6][ManagementConnection] New connection established.
+[06:01:56] [192.168.1.54][158dbe01][ExtensionHostConnection] New connection established.
+[06:01:56] [192.168.1.54][158dbe01][ExtensionHostConnection] <828570> Launched Extension Host Process.
+[06:01:59] [192.168.1.54][158dbe01][ExtensionHostConnection] <828570> [reconnection-grace-time] Extension host: read VSCODE_RECONNECTION_GRACE_TIME=10800000ms (10800s)
+
+[06:06:37] [192.168.1.54][7739b694][ExtensionHostConnection] <826091> Extension Host Process exited with code: 0, signal: null.
+[06:07:36] [192.168.1.54][00ebaac6][ManagementConnection] The client has disconnected gracefully, so the connection will be disposed.
+[06:07:36] [192.168.1.54][158dbe01][ExtensionHostConnection] <828570> Extension Host Process exited with code: 0, signal: null.
+[09:02:20] [192.168.1.54][fda4138a][ExtensionHostConnection] <828075> Extension Host Process exited with code: 0, signal: null.
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda_bg.wasm
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda.js
+[19:29:01] [192.168.1.54][5adc2a46][ManagementConnection] New connection established.
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda.js
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda_bg.wasm
+[19:29:08] [192.168.1.54][5c7c246c][ManagementConnection] New connection established.
+[19:29:10] [192.168.1.54][fb27e023][ExtensionHostConnection] New connection established.
+[19:29:10] [192.168.1.54][fb27e023][ExtensionHostConnection] <3019464> Launched Extension Host Process.
+[19:29:24] [192.168.1.54][fb27e023][ExtensionHostConnection] <3019464> [reconnection-grace-time] Extension host: read VSCODE_RECONNECTION_GRACE_TIME=10800000ms (10800s)
+
+[19:29:27] [192.168.1.54][dc9a245d][ExtensionHostConnection] New connection established.
+[19:29:27] [192.168.1.54][dc9a245d][ExtensionHostConnection] <3019842> Launched Extension Host Process.
+[19:29:33] [192.168.1.54][dc9a245d][ExtensionHostConnection] <3019842> [reconnection-grace-time] Extension host: read VSCODE_RECONNECTION_GRACE_TIME=10800000ms (10800s)
+
+[20:13:12] [192.168.1.54][5c7c246c][ManagementConnection] The client has disconnected gracefully, so the connection will be disposed.
+[20:13:12] [192.168.1.54][5adc2a46][ManagementConnection] The client has disconnected gracefully, so the connection will be disposed.
+[20:13:13] [192.168.1.54][dc9a245d][ExtensionHostConnection] <3019842> Extension Host Process exited with code: 0, signal: null.
+[20:13:13] [192.168.1.54][fb27e023][ExtensionHostConnection] <3019464> Extension Host Process exited with code: 0, signal: null.
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda_bg.wasm
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda.js
+[04:44:21] [192.168.1.54][b3f2a2dc][ManagementConnection] New connection established.
+[04:44:29] [192.168.1.54][e97ba893][ExtensionHostConnection] New connection established.
+[04:44:29] [192.168.1.54][e97ba893][ExtensionHostConnection] <3708137> Launched Extension Host Process.
+[04:44:34] [192.168.1.54][e97ba893][ExtensionHostConnection] <3708137> [reconnection-grace-time] Extension host: read VSCODE_RECONNECTION_GRACE_TIME=10800000ms (10800s)
+
+[04:45:10] [192.168.1.54][b3f2a2dc][ManagementConnection] The client has disconnected gracefully, so the connection will be disposed.
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda.js
+[04:45:17] [192.168.1.54][0040822d][ManagementConnection] New connection established.
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda_bg.wasm
+[04:45:23] [192.168.1.54][38b3c936][ExtensionHostConnection] New connection established.
+[04:45:23] [192.168.1.54][38b3c936][ExtensionHostConnection] <3709485> Launched Extension Host Process.
+[04:45:32] [192.168.1.54][38b3c936][ExtensionHostConnection] <3709485> [reconnection-grace-time] Extension host: read VSCODE_RECONNECTION_GRACE_TIME=10800000ms (10800s)
+
+[04:49:45] [192.168.1.54][0040822d][ManagementConnection] The client has disconnected gracefully, so the connection will be disposed.
+[04:49:46] [192.168.1.54][38b3c936][ExtensionHostConnection] <3709485> Extension Host Process exited with code: 0, signal: null.
+[07:45:41] [192.168.1.54][e97ba893][ExtensionHostConnection] <3708137> Extension Host Process exited with code: 0, signal: null.
