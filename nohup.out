@@ -90,3 +90,11 @@ File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda_
 [04:49:45] [192.168.1.54][0040822d][ManagementConnection] The client has disconnected gracefully, so the connection will be disposed.
 [04:49:46] [192.168.1.54][38b3c936][ExtensionHostConnection] <3709485> Extension Host Process exited with code: 0, signal: null.
 [07:45:41] [192.168.1.54][e97ba893][ExtensionHostConnection] <3708137> Extension Host Process exited with code: 0, signal: null.
+Failed login attempt {"remoteAddress":"192.168.1.54","userAgent":"Mozilla/5.0 (X11; Linux x86_64; rv:148.0) Gecko/20100101 Firefox/148.0","timestamp":1776195262}
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda_bg.wasm
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda.js
+[19:35:49] [192.168.1.54][57d2851f][ManagementConnection] New connection established.
+[19:35:56] [192.168.1.54][77c3ace1][ExtensionHostConnection] New connection established.
+[19:35:56] [192.168.1.54][77c3ace1][ExtensionHostConnection] <2547035> Launched Extension Host Process.
+[19:36:03] [192.168.1.54][77c3ace1][ExtensionHostConnection] <2547035> [reconnection-grace-time] Extension host: read VSCODE_RECONNECTION_GRACE_TIME=10800000ms (10800s)
+

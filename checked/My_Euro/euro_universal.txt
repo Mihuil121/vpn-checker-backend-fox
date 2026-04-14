@@ -1,3 +1,4 @@
+
 vmess://ew0KICAidiI6ICIyIiwNCiAgInBzIjogIj4+QHYybm9kZXM6OkZSOjpGUiIsDQogICJhZGQiOiAiMTYyLjE1OS4xNTIuNCIsDQogICJwb3J0IjogIjg0NDMiLA0KICAiaWQiOiAiMTllNTJiZjQtMWI3ZC00YmQ0LWFlNjYtNmNhMDI0NDM2YzE3IiwNCiAgImFpZCI6ICIwIiwNCiAgInNjeSI6ICJhdXRvIiwNCiAgIm5ldCI6ICJ3cyIsDQogICJ0eXBlIjogIi0tLSIsDQogICJob3N0IjogImZyc3lzLmZsLWRsLmNvbSIsDQogICJwYXRoIjogIi9nYnQiLA0KICAidGxzIjogInRscyIsDQogICJzbmkiOiAiZnJzeXMuZmwtZGwuY29tIiwNCiAgImFscG4iOiAiaDMsaDIsaHR0cC8xLjEiLA0KICAiZnAiOiAiY2hyb21lIiwNCiAgImluc2VjdXJlIjogIjAiDQp9#Шкатулка запретов — 🇺🇸US
 vless://6461860a-d367-4d47-8e82-7d8e1047a152@8.39.125.6:2087?allowInsecure=1&encryption=none&host=aier.eu.cc&path=%2F&security=tls&sni=aier.eu.cc&type=ws#Шкатулка запретов — 🇺🇸US
 vless://6461860a-d367-4d47-8e82-7d8e1047a152@8.35.211.162:2087?allowInsecure=1&encryption=none&host=aier.eu.cc&path=/&security=tls&sni=aier.eu.cc&type=ws#Шкатулка запретов — 🇺🇸US
@@ -210,3 +211,4 @@ vless://03896a37-db8f-44ed-8ce1-45a1577f6da6@172.67.216.218:443?allowInsecure=1&
 vless://e62d084a-b9de-4486-a776-a54d200f89c1@172.67.134.91:443?allowInsecure=1&encryption=none&host=square-sea-36d2.sendconfig.workers.dev&path=ws&security=tls&sni=square-sea-36d2.sendconfig.workers.dev&type=ws#Шкатулка запретов — 🇺🇸US
 vless://81f3376a-c76f-4f4b-87f2-4322cbfe212a@188.225.39.93:443?flow=xtls-rprx-vision&encryption=none&type=tcp&security=reality&fp=randomized&sni=api-maps.yandex.ru&pbk=gkXWyBWBgObexMJGfDoDLbX2xKJbQwLLEEkzt-4j3ik&spx=%2F#Шкатулка запретов — 🇷🇺RU
 trojan://trojan@152.53.200.98:8444?security=tls&sni=jflsjlaf.pages.dev&insecure=0&allowInsecure=0&type=ws&host=jflsjlaf.pages.dev&path=%2F%2F#Шкатулка запретов — 🇺🇸US
+
