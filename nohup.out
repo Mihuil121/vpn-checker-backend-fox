@@ -109,3 +109,46 @@ File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda_
 
 [14:24:45] [192.168.1.54][034d3767][ManagementConnection] The client has disconnected gracefully, so the connection will be disposed.
 [14:24:45] [192.168.1.54][8c71b5f0][ExtensionHostConnection] <4004902> Extension Host Process exited with code: 0, signal: null.
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda_bg.wasm
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda.js
+[05:49:54] [192.168.1.54][d968a0ad][ManagementConnection] New connection established.
+[05:50:07] [192.168.1.54][268f67e5][ExtensionHostConnection] New connection established.
+[05:50:07] [192.168.1.54][268f67e5][ExtensionHostConnection] <548482> Launched Extension Host Process.
+[05:50:17] [192.168.1.54][268f67e5][ExtensionHostConnection] <548482> [reconnection-grace-time] Extension host: read VSCODE_RECONNECTION_GRACE_TIME=10800000ms (10800s)
+
+[05:54:11] [192.168.1.54][d968a0ad][ManagementConnection] The client has disconnected gracefully, so the connection will be disposed.
+[05:54:11] [192.168.1.54][268f67e5][ExtensionHostConnection] <548482> Extension Host Process exited with code: 0, signal: null.
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda.js
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda_bg.wasm
+[05:54:46] [192.168.1.54][30f8f1b5][ManagementConnection] New connection established.
+[05:55:04] [192.168.1.54][d580bfd5][ExtensionHostConnection] New connection established.
+[05:55:04] [192.168.1.54][d580bfd5][ExtensionHostConnection] <555844> Launched Extension Host Process.
+[05:55:07] [192.168.1.54][d580bfd5][ExtensionHostConnection] <555844> [reconnection-grace-time] Extension host: read VSCODE_RECONNECTION_GRACE_TIME=10800000ms (10800s)
+
+[05:57:21] [192.168.1.54][30f8f1b5][ManagementConnection] The client has disconnected gracefully, so the connection will be disposed.
+[05:57:22] [192.168.1.54][d580bfd5][ExtensionHostConnection] <555844> Extension Host Process exited with code: 0, signal: null.
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda.js
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda_bg.wasm
+[13:09:32] [192.168.1.54][8afbed33][ManagementConnection] New connection established.
+[13:09:39] [192.168.1.54][592093f3][ExtensionHostConnection] New connection established.
+[13:09:39] [192.168.1.54][592093f3][ExtensionHostConnection] <1115263> Launched Extension Host Process.
+[13:09:47] [192.168.1.54][592093f3][ExtensionHostConnection] <1115263> [reconnection-grace-time] Extension host: read VSCODE_RECONNECTION_GRACE_TIME=10800000ms (10800s)
+
+File not found: /usr/lib/code-server/lib/vscode/node_modules/@xterm/addon-ligatures/lib/addon-ligatures.js
+[13:14:24] [192.168.1.54][8afbed33][ManagementConnection] The client has disconnected gracefully, so the connection will be disposed.
+[13:14:24] [192.168.1.54][592093f3][ExtensionHostConnection] <1115263> Extension Host Process exited with code: 0, signal: null.
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda.js
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda_bg.wasm
+[19:10:25] [192.168.1.54][dd7a8657][ManagementConnection] New connection established.
+[19:10:44] [192.168.1.54][46d1a271][ExtensionHostConnection] New connection established.
+[19:10:44] [192.168.1.54][46d1a271][ExtensionHostConnection] <1598802> Launched Extension Host Process.
+[19:10:46] [192.168.1.54][46d1a271][ExtensionHostConnection] <1598802> [reconnection-grace-time] Extension host: read VSCODE_RECONNECTION_GRACE_TIME=10800000ms (10800s)
+
+[19:11:41] [192.168.1.54][dd7a8657][ManagementConnection] The client has disconnected gracefully, so the connection will be disposed.
+[19:11:42] [192.168.1.54][46d1a271][ExtensionHostConnection] <1598802> Extension Host Process exited with code: 0, signal: null.
+Error: Unexpected SIGPIPE
+    at process.<anonymous> (file:///usr/lib/code-server/lib/vscode/out/server-main.js:598:10939)
+    at process.emit (node:events:531:35)
+[19:11:42] Error: Unexpected SIGPIPE
+    at process.<anonymous> (file:///usr/lib/code-server/lib/vscode/out/server-main.js:582:1282)
+    at process.emit (node:events:531:35)

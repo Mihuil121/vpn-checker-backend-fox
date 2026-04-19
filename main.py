@@ -155,6 +155,13 @@ class Config:
             # ===== ВСТАВЬ СВОИ ССЫЛКИ СЮДА =====
             self.SOURCES = [
                 "https://raw.githubusercontent.com/zieng2/wl/main/vless.txt",
+                "https://wlrus.lol/confs/selected.txt",
+                "https://raw.githubusercontent.com/Ilyacom4ik/free-v2ray-2026/refs/heads/main/subscriptions/FreeCFGHub1.txt",
+                "https://raw.githubusercontent.com/HikaruApps/WhiteLattice/refs/heads/main/subscriptions/config.txt",
+                "https://storage.yandexcloud.net/wall-breaker-c0de-a666/config.txt",
+                "https://gitverse.ru/api/repos/bywarm/rser/raw/branch/master/selected.txt",
+                "https://wlrus.lol/confs/merged.txt",
+                "https://gitverse.ru/api/repos/bywarm/rser/raw/branch/master/merged.txt",
                 "https://raw.githubusercontent.com/F0rc3Run/F0rc3Run/main/splitted-by-protocol/vless.txt",
                 "https://v2.alicivil.workers.dev/",
                 "https://raw.githubusercontent.com/mshojaei77/v2rayAuto/refs/heads/main/telegram/popular_channels_1",
