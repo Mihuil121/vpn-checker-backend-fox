@@ -125,13 +125,13 @@ class Config:
     SOCKS_PORT_START: int = 20000
     SOCKS_PORT_RANGE: int = 10000   # порты 20000-29999
 
-    XRAY_STARTUP_WAIT:  float = 0.3
-    CONNECTION_TIMEOUT: int   = 3
-    REQUEST_TIMEOUT:    int   = 5
-    TOTAL_TIMEOUT:      int   = 15
+    XRAY_STARTUP_WAIT:  float = 0.5
+    CONNECTION_TIMEOUT: int   = 4
+    REQUEST_TIMEOUT:    int   = 8
+    TOTAL_TIMEOUT:      int   = 25
 
-    MAX_WORKERS_PER_SUB: int = 50
-    MAX_TOTAL_WORKERS:   int = 50
+    MAX_WORKERS_PER_SUB: int = 80
+    MAX_TOTAL_WORKERS:   int = 80
     MAX_KEYS:            int = 999999
 
     RUSSIAN_TEST_SITES: List[str] = None
@@ -155,6 +155,15 @@ class Config:
             # ===== ВСТАВЬ СВОИ ССЫЛКИ СЮДА =====
             self.SOURCES = [
                 "https://raw.githubusercontent.com/zieng2/wl/main/vless.txt",
+                "https://gitverse.ru/api/repos/RUVIPIEN/russian-white-bolt/raw/branch/master/VPNMIRRORS/nekobox/Alley_Config_1_d0212d.txt",
+                "https://raw.githubusercontent.com/Vovo4ka000/V4kVPN/main/v4kVPN.txt",
+                "https://gitverse.ru/api/repos/RUVIPIEN/russian-white-bolt/raw/branch/master/VPNMIRRORS/nekobox/Alley_Config_2_862576.txt",
+                "https://gitverse.ru/api/repos/RUVIPIEN/russian-white-bolt/raw/branch/master/VPNMIRRORS/nekobox/ByWarm_Merged_b37672.txt",
+                "https://gitverse.ru/api/repos/RUVIPIEN/russian-white-bolt/raw/branch/master/VPNMIRRORS/nekobox/ByWarm_Selected_6ac883.txt",
+                "https://gitverse.ru/api/repos/RUVIPIEN/russian-white-bolt/raw/branch/master/VPNMIRRORS/nekobox/ByWarm_WL_db4c3f.txt",
+                "https://gitverse.ru/api/repos/RUVIPIEN/russian-white-bolt/raw/branch/master/VPNMIRRORS/nekobox/ByeWhiteLists_2_fda813.txt",
+                "https://gitverse.ru/api/repos/RUVIPIEN/russian-white-bolt/raw/branch/master/VPNMIRRORS/v2ray/Bypass_Config_7_d33b54.txt",
+                "https://gitverse.ru/api/repos/RUVIPIEN/russian-white-bolt/raw/branch/master/VPNMIRRORS/happ/SER38_Happ_Sub1_ddd131.txt",
                 "https://wlrus.lol/confs/selected.txt",
                 "https://raw.githubusercontent.com/Ilyacom4ik/free-v2ray-2026/refs/heads/main/subscriptions/FreeCFGHub1.txt",
                 "https://raw.githubusercontent.com/HikaruApps/WhiteLattice/refs/heads/main/subscriptions/config.txt",

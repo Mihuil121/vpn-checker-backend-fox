@@ -152,3 +152,58 @@ Error: Unexpected SIGPIPE
 [19:11:42] Error: Unexpected SIGPIPE
     at process.<anonymous> (file:///usr/lib/code-server/lib/vscode/out/server-main.js:582:1282)
     at process.emit (node:events:531:35)
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda.js
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda_bg.wasm
+[06:01:26] [192.168.1.54][c6725cf3][ManagementConnection] New connection established.
+[06:01:33] [192.168.1.54][930fa671][ExtensionHostConnection] New connection established.
+[06:01:33] [192.168.1.54][930fa671][ExtensionHostConnection] <2425210> Launched Extension Host Process.
+[06:01:38] [192.168.1.54][930fa671][ExtensionHostConnection] <2425210> [reconnection-grace-time] Extension host: read VSCODE_RECONNECTION_GRACE_TIME=10800000ms (10800s)
+
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda.js
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda_bg.wasm
+[06:03:20] [192.168.1.54][208f6637][ManagementConnection] New connection established.
+[06:03:26] [192.168.1.54][ee066721][ExtensionHostConnection] New connection established.
+[06:03:27] [192.168.1.54][ee066721][ExtensionHostConnection] <2427675> Launched Extension Host Process.
+[06:03:31] RequestStore#acceptReply was called without receiving a matching request 277
+[06:03:31] RequestStore#acceptReply was called without receiving a matching request 278
+[06:03:31] RequestStore#acceptReply was called without receiving a matching request 279
+[06:03:31] RequestStore#acceptReply was called without receiving a matching request 280
+[06:03:31] RequestStore#acceptReply was called without receiving a matching request 281
+[06:03:31] RequestStore#acceptReply was called without receiving a matching request 282
+[06:03:31] RequestStore#acceptReply was called without receiving a matching request 283
+[06:03:31] RequestStore#acceptReply was called without receiving a matching request 284
+[06:03:31] RequestStore#acceptReply was called without receiving a matching request 285
+[06:03:31] RequestStore#acceptReply was called without receiving a matching request 286
+[06:03:31] RequestStore#acceptReply was called without receiving a matching request 287
+[06:03:31] RequestStore#acceptReply was called without receiving a matching request 288
+[06:03:34] [192.168.1.54][ee066721][ExtensionHostConnection] <2427675> [reconnection-grace-time] Extension host: read VSCODE_RECONNECTION_GRACE_TIME=10800000ms (10800s)
+
+[06:03:34] RequestStore#acceptReply was called without receiving a matching request 289
+[06:03:34] RequestStore#acceptReply was called without receiving a matching request 290
+[06:03:34] RequestStore#acceptReply was called without receiving a matching request 291
+[06:03:34] RequestStore#acceptReply was called without receiving a matching request 292
+[06:03:34] RequestStore#acceptReply was called without receiving a matching request 293
+[06:03:34] RequestStore#acceptReply was called without receiving a matching request 294
+[06:03:34] RequestStore#acceptReply was called without receiving a matching request 295
+[06:03:34] RequestStore#acceptReply was called without receiving a matching request 296
+[06:03:34] RequestStore#acceptReply was called without receiving a matching request 297
+[06:03:34] RequestStore#acceptReply was called without receiving a matching request 298
+[06:03:34] RequestStore#acceptReply was called without receiving a matching request 299
+[06:03:34] RequestStore#acceptReply was called without receiving a matching request 300
+[06:03:34] RequestStore#acceptReply was called without receiving a matching request 301
+[06:03:34] RequestStore#acceptReply was called without receiving a matching request 302
+[06:03:34] RequestStore#acceptReply was called without receiving a matching request 303
+[06:03:34] RequestStore#acceptReply was called without receiving a matching request 304
+[06:03:34] RequestStore#acceptReply was called without receiving a matching request 305
+[06:03:34] RequestStore#acceptReply was called without receiving a matching request 306
+[06:03:34] RequestStore#acceptReply was called without receiving a matching request 307
+[06:03:34] RequestStore#acceptReply was called without receiving a matching request 308
+[06:03:34] RequestStore#acceptReply was called without receiving a matching request 309
+[06:03:34] RequestStore#acceptReply was called without receiving a matching request 310
+[06:03:34] RequestStore#acceptReply was called without receiving a matching request 311
+[06:03:34] RequestStore#acceptReply was called without receiving a matching request 312
+[06:04:23] [192.168.1.54][c6725cf3][ManagementConnection] The client has disconnected gracefully, so the connection will be disposed.
+[06:04:24] [192.168.1.54][930fa671][ExtensionHostConnection] <2425210> Extension Host Process exited with code: 0, signal: null.
+File not found: /usr/lib/code-server/lib/vscode/node_modules/@xterm/addon-ligatures/lib/addon-ligatures.js
+[06:24:10] [192.168.1.54][208f6637][ManagementConnection] The client has disconnected gracefully, so the connection will be disposed.
+[06:24:10] [192.168.1.54][ee066721][ExtensionHostConnection] <2427675> Extension Host Process exited with code: 0, signal: null.
