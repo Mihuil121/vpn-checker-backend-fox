@@ -207,3 +207,13 @@ File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda_
 File not found: /usr/lib/code-server/lib/vscode/node_modules/@xterm/addon-ligatures/lib/addon-ligatures.js
 [06:24:10] [192.168.1.54][208f6637][ManagementConnection] The client has disconnected gracefully, so the connection will be disposed.
 [06:24:10] [192.168.1.54][ee066721][ExtensionHostConnection] <2427675> Extension Host Process exited with code: 0, signal: null.
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda.js
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda_bg.wasm
+[18:54:34] [192.168.1.54][b297245e][ManagementConnection] New connection established.
+[18:54:40] [192.168.1.54][c1204bc1][ExtensionHostConnection] New connection established.
+[18:54:40] [192.168.1.54][c1204bc1][ExtensionHostConnection] <2624066> Launched Extension Host Process.
+[18:54:48] [192.168.1.54][c1204bc1][ExtensionHostConnection] <2624066> [reconnection-grace-time] Extension host: read VSCODE_RECONNECTION_GRACE_TIME=10800000ms (10800s)
+
+File not found: /usr/lib/code-server/lib/vscode/node_modules/@xterm/addon-ligatures/lib/addon-ligatures.js
+[19:00:44] [192.168.1.54][b297245e][ManagementConnection] The client has disconnected gracefully, so the connection will be disposed.
+[19:00:44] [192.168.1.54][c1204bc1][ExtensionHostConnection] <2624066> Extension Host Process exited with code: 0, signal: null.

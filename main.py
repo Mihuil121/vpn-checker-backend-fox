@@ -155,6 +155,7 @@ class Config:
             # ===== ВСТАВЬ СВОИ ССЫЛКИ СЮДА =====
             self.SOURCES = [
                 "https://raw.githubusercontent.com/zieng2/wl/main/vless.txt",
+                "https://translated.turbopages.org/proxy_u/en-ru.ru.d9c419fb-69e7c673-44d98ec8-74722d776562/https/raw.githubusercontent.com/Vovo4ka000/V4kVPN/main/v4kVPN.txt",
                 "https://gitverse.ru/api/repos/RUVIPIEN/russian-white-bolt/raw/branch/master/VPNMIRRORS/nekobox/Alley_Config_1_d0212d.txt",
                 "https://raw.githubusercontent.com/Vovo4ka000/V4kVPN/main/v4kVPN.txt",
                 "https://gitverse.ru/api/repos/RUVIPIEN/russian-white-bolt/raw/branch/master/VPNMIRRORS/nekobox/Alley_Config_2_862576.txt",
