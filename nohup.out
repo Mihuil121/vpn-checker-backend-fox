@@ -217,3 +217,21 @@ File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda_
 File not found: /usr/lib/code-server/lib/vscode/node_modules/@xterm/addon-ligatures/lib/addon-ligatures.js
 [19:00:44] [192.168.1.54][b297245e][ManagementConnection] The client has disconnected gracefully, so the connection will be disposed.
 [19:00:44] [192.168.1.54][c1204bc1][ExtensionHostConnection] <2624066> Extension Host Process exited with code: 0, signal: null.
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda.js
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda_bg.wasm
+[18:44:42] [192.168.1.54][9e3ae641][ManagementConnection] New connection established.
+[18:44:52] [192.168.1.54][0a10e52c][ExtensionHostConnection] New connection established.
+[18:44:53] [192.168.1.54][0a10e52c][ExtensionHostConnection] <1333447> Launched Extension Host Process.
+[18:45:06] [192.168.1.54][0a10e52c][ExtensionHostConnection] <1333447> [reconnection-grace-time] Extension host: read VSCODE_RECONNECTION_GRACE_TIME=10800000ms (10800s)
+
+[18:45:26] [192.168.1.54][9e3ae641][ManagementConnection] The client has disconnected gracefully, so the connection will be disposed.
+[18:45:31] [192.168.1.54][0a10e52c][ExtensionHostConnection] <1333447> Extension Host Process exited with code: 0, signal: null.
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda_bg.wasm
+File not found: /usr/lib/code-server/lib/vscode/node_modules/vsda/rust/web/vsda.js
+[18:45:36] [192.168.1.54][c8ed9362][ManagementConnection] New connection established.
+[18:45:43] [192.168.1.54][6a7e1d64][ExtensionHostConnection] New connection established.
+[18:45:43] [192.168.1.54][6a7e1d64][ExtensionHostConnection] <1335137> Launched Extension Host Process.
+[18:45:50] [192.168.1.54][6a7e1d64][ExtensionHostConnection] <1335137> [reconnection-grace-time] Extension host: read VSCODE_RECONNECTION_GRACE_TIME=10800000ms (10800s)
+
+[18:46:38] No ptyHost heartbeat after 6 seconds
+File not found: /usr/lib/code-server/lib/vscode/node_modules/@xterm/addon-ligatures/lib/addon-ligatures.js
