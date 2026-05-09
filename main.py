@@ -155,6 +155,17 @@ class Config:
             # ===== ВСТАВЬ СВОИ ССЫЛКИ СЮДА =====
             self.SOURCES = [
                 "https://raw.githubusercontent.com/zieng2/wl/main/vless.txt",
+                "https://raw.githubusercontent.com/Maskkost93/kizyak-vpn-4.0/refs/heads/main/kizyakbeta7.txt",
+                "https://raw.githubusercontent.com/vsvavan2/vpn-config-rkn/refs/heads/main/output/WHITE_CIDR_RU_all_working.txt",
+                "https://raw.githubusercontent.com/opti4riponty-arch/VLESS-Co/refs/heads/main/VLESS%20%26%20Co",
+                "https://subrostunnel.vercel.app/wl.txt",
+                "https://raw.githubusercontent.com/luxxuria/harvester/refs/heads/main/non_ru.txt",
+                "https://raw.githubusercontent.com/kort0881/vpn-checker-backend/main/checked/RU_Best/ru_white_all_WHITE.txt",
+                "https://gist.githubusercontent.com/DestroyST6767/50af50221ca1858ba2084efc0f524fbc/raw",
+                "https://raw.githubusercontent.com/Temnuk/naabuzil/refs/heads/main/wifi",
+                "https://raw.githubusercontent.com/vsvavan2/vpn-config-rkn/refs/heads/main/output/WHITE_CIDR_RU_checked_working.txt",
+                "https://raw.githubusercontent.com/vsvavan2/vpn-config-rkn/refs/heads/main/output/WHITE_Reality_Mobile_2_working.txt",
+                "https://github.com/vsvavan2/vpn-config-rkn/blob/main/output/WHITE_Reality_Mobile_working.txt",
                 "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/BLACK_SS%2BAll_RUS.txt",
                 "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/WHITE-CIDR-RU-all.txt",
                 "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/WHITE-CIDR-RU-checked.txt",
